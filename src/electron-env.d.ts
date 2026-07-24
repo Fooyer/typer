@@ -1,0 +1,79 @@
+import type { ConnectionProfile } from "../electron/connections";
+import type {
+  AtelierDocNameEntry,
+  AtelierDocument,
+  AtelierQueryResult,
+  AtelierServerInfo,
+  RestCallResult,
+  StudioMenu,
+  StudioUserAction,
+} from "../electron/atelier";
+
+export interface ElectronAPI {
+  getVersions: () => { chrome: string; node: string; electron: string };
+  onMainMessage: (callback: (message: string) => void) => void;
+  windowControls: {
+    minimize: () => Promise<void>;
+    toggleMaximize: () => Promise<void>;
+    close: () => Promise<void>;
+  };
+  connections: {
+    list: () => Promise<ConnectionProfile[]>;
+    save: (profile: Omit<ConnectionProfile, "id"> & { id?: string }, password?: string) => Promise<ConnectionProfile>;
+    delete: (id: string) => Promise<void>;
+  };
+  atelier: {
+    test: (id: string) => Promise<AtelierServerInfo>;
+    listNamespaces: (id: string) => Promise<string[]>;
+    listDocuments: (id: string, namespace: string, includeSystem?: boolean) => Promise<AtelierDocNameEntry[]>;
+    getDocument: (id: string, namespace: string, name: string) => Promise<AtelierDocument>;
+    saveDocument: (id: string, namespace: string, name: string, contentLines: string[]) => Promise<void>;
+    deleteDocument: (id: string, namespace: string, name: string) => Promise<void>;
+    compile: (id: string, namespace: string, docs: string[]) => Promise<string[]>;
+    query: (id: string, namespace: string, sql: string, parameters: unknown[]) => Promise<AtelierQueryResult>;
+    callRoute: (
+      id: string,
+      path: string,
+      method: string,
+      headers: Record<string, string>,
+      body?: string,
+    ) => Promise<RestCallResult>;
+    isStudioExtensionEnabled: (id: string, namespace: string) => Promise<boolean>;
+    getStudioMenus: (
+      id: string,
+      namespace: string,
+      menuType: "main" | "context",
+      docName: string,
+      selectedText?: string,
+    ) => Promise<StudioMenu[]>;
+    invokeStudioUserAction: (
+      id: string,
+      namespace: string,
+      type: number,
+      actionId: string,
+      docName: string,
+      selectedText?: string,
+    ) => Promise<StudioUserAction | null>;
+    invokeStudioAfterUserAction: (
+      id: string,
+      namespace: string,
+      type: number,
+      actionId: string,
+      docName: string,
+      answer: string,
+      msg: string,
+    ) => Promise<StudioUserAction | null>;
+  };
+  studio: {
+    openCspAction: (url: string) => Promise<"1" | "2">;
+  };
+  files: {
+    saveText: (suggestedName: string, content: string) => Promise<string | null>;
+  };
+}
+
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
+  }
+}
