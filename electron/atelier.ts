@@ -203,6 +203,78 @@ export async function getDocument(
   return response.result;
 }
 
+export interface DocumentReadOnlyStatus {
+  readOnly: boolean;
+  reason?: string;
+}
+
+/**
+ * Checks the two reasons a document can be non-editable on the server, reverse-derived from
+ * vscode-objectscript's own FileSystemProvider.stat() (src/providers/FileSystemProvider/FileSystemProvider.ts):
+ *
+ * 1. Deployed classes — compiled with source stripped for IP protection. `Deployed` is a real column
+ *    on %Dictionary.ClassDefinition; > 0 means deployed.
+ * 2. Server-side source control ("server-side source control" — a class extending
+ *    `%Studio.Extension.Base` configured as the namespace's source control class, same mechanism as
+ *    getStudioMenus above) can report a document as not checked out / not editable via
+ *    `%Atelier_v1_Utils.Extension_GetStatus`, the same SQL-callable bridge.
+ *
+ * Both checks fail silently (treated as "not read-only for this reason") when they don't apply —
+ * no class row (brand-new unsaved class), no source control configured, insufficient permissions to
+ * query %Dictionary, etc. — since the common case (no server-side reason this doc can't be edited)
+ * shouldn't require any of that to be set up.
+ */
+export async function getDocumentReadOnlyStatus(
+  config: AtelierConnectionConfig,
+  namespace: string,
+  docName: string,
+): Promise<DocumentReadOnlyStatus> {
+  if (docName.toLowerCase().endsWith(".cls")) {
+    try {
+      const className = docName.slice(0, -4);
+      const result = await runQuery(
+        config,
+        namespace,
+        "SELECT Deployed FROM %Dictionary.ClassDefinition WHERE Name = ?",
+        [className],
+      );
+      if (Number(result.rows[0]?.Deployed) > 0) {
+        return {
+          readOnly: true,
+          reason: "Classe implantada (deployed) — código-fonte não disponível para edição.",
+        };
+      }
+    } catch {
+      // Ignore — see doc comment above.
+    }
+  }
+
+  try {
+    const result = await runQuery(
+      config,
+      namespace,
+      "select * from %Atelier_v1_Utils.Extension_GetStatus(?)",
+      [docName],
+    );
+    const status = result.rows[result.rows.length - 1];
+    // Column casing isn't verified against a live server — same caveat as searchInFiles above —
+    // so this checks case-insensitively rather than assuming "editable" is exactly right.
+    const editableEntry =
+      status && Object.entries(status).find(([key]) => key.toLowerCase() === "editable");
+    if (editableEntry && typeof editableEntry[1] === "boolean" && !editableEntry[1]) {
+      return {
+        readOnly: true,
+        reason:
+          "Controle de código-fonte do servidor marca este documento como não editável (sem check-out).",
+      };
+    }
+  } catch {
+    // Ignore — no server-side source control configured, or this IRIS version doesn't expose it.
+  }
+
+  return { readOnly: false };
+}
+
 export async function saveDocument(
   config: AtelierConnectionConfig,
   namespace: string,

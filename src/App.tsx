@@ -68,6 +68,11 @@ interface Tab {
   connectionId?: string;
   namespace?: string;
   docName?: string;
+  /** Server says this document can't be edited (deployed class, or source control checkout status)
+   * — see applyReadOnlyStatus. Undefined until that async check resolves; treated as editable
+   * until then, same as any tab not backed by a server document. */
+  readOnly?: boolean;
+  readOnlyReason?: string;
 }
 
 function isDirty(tab: Tab): boolean {
@@ -196,6 +201,30 @@ function App() {
     );
   }
 
+  // Fire-and-forget: the tab is created (and shown as editable) immediately with whatever content
+  // was already fetched, and flips to read-only a moment later if the server says so — this is a
+  // separate round trip (see getDocumentReadOnlyStatus) from the one that fetched the content, so
+  // there's no reason to make opening a document wait on it.
+  function applyReadOnlyStatus(
+    tabId: string,
+    connectionId: string,
+    namespace: string,
+    docName: string,
+  ) {
+    if (!hasElectronAPI) return;
+    window.electronAPI.atelier
+      .getDocumentReadOnlyStatus(connectionId, namespace, docName)
+      .then((status) => {
+        if (!status.readOnly) return;
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === tabId ? { ...t, readOnly: true, readOnlyReason: status.reason } : t,
+          ),
+        );
+      })
+      .catch(() => {});
+  }
+
   function handleOpenDocument(
     connectionId: string,
     namespace: string,
@@ -226,6 +255,7 @@ function App() {
     ]);
     setActiveTabId(id);
     appendLog(`${name} aberto (${namespace}).`, "success");
+    applyReadOnlyStatus(id, connectionId, namespace, name);
   }
 
   async function openClassByName(className: string) {
@@ -306,6 +336,7 @@ function App() {
       ]);
       setActiveTabId(id);
       requestAnimationFrame(() => codeEditorRef.current?.revealLine(id, line));
+      applyReadOnlyStatus(id, connectionId, namespace, docName);
     } catch (error) {
       appendLog(`Não foi possível abrir "${docName}": ${(error as Error).message}`, "error");
     }
@@ -764,6 +795,13 @@ function App() {
     const tab = activeTab;
     if (!tab || !tab.connectionId || !tab.namespace || !tab.docName) return;
     const { connectionId, namespace, docName } = tab;
+    if (tab.readOnly) {
+      appendLog(
+        `Não é possível salvar "${docName}": ${tab.readOnlyReason ?? "o servidor marca este documento como somente leitura."}`,
+        "error",
+      );
+      return;
+    }
     appendLog(`Salvando ${docName}…`);
     try {
       const lines = tab.content.split("\n");
@@ -1151,10 +1189,12 @@ function App() {
                   onAuxClick={(event) => {
                     if (event.button === 1) closeTab(tab.id);
                   }}
+                  title={tab.readOnly ? (tab.readOnlyReason ?? "Somente leitura") : undefined}
                 >
                   <span className="tab-title">
                     {tab.kind === "sql" ? "🗄️ " : ""}
                     {tab.kind === "api" ? "🔌 " : ""}
+                    {tab.readOnly ? "🔒 " : ""}
                     {tab.title}
                     {isDirty(tab) ? " ●" : ""}
                   </span>
@@ -1191,7 +1231,7 @@ function App() {
                 ref={codeEditorRef}
                 tabs={tabs
                   .filter((tab) => tab.kind === "code")
-                  .map((tab) => ({ id: tab.id, content: tab.content }))}
+                  .map((tab) => ({ id: tab.id, content: tab.content, readOnly: tab.readOnly }))}
                 activeTabId={activeTab?.kind === "code" ? activeTabId : null}
                 onContentChange={updateTabContent}
                 diagnostics={diagnostics}

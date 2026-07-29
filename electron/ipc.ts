@@ -87,6 +87,14 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    "atelier:getDocumentReadOnlyStatus",
+    async (_event, id: string, namespace: string, name: string) => {
+      const profile = getProfileOrThrow(id);
+      return atelier.getDocumentReadOnlyStatus(toAtelierConfig(profile), namespace, name);
+    },
+  );
+
+  ipcMain.handle(
     "atelier:searchInFiles",
     async (
       _event,

@@ -14,3 +14,13 @@ createRoot(document.getElementById("app")!).render(
     <App />
   </StrictMode>,
 );
+
+// Double rAF: the first fires once the browser is ready to paint the frame React just committed,
+// the second confirms that frame actually made it to screen — removing the loading screen any
+// earlier risks a one-frame gap back to the (dark, so not a white flash, but still a visible pop)
+// html/body background before the real app shell is there to replace it.
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    document.getElementById("app-loading")?.remove();
+  });
+});

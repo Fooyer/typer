@@ -6,6 +6,7 @@ import type {
   AtelierQueryResult,
   AtelierSearchFileResult,
   AtelierServerInfo,
+  DocumentReadOnlyStatus,
   RestCallResult,
   StudioMenu,
   StudioUserAction,
@@ -45,6 +46,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("atelier:listDocuments", id, namespace, includeSystem),
     getDocument: (id: string, namespace: string, name: string): Promise<AtelierDocument> =>
       ipcRenderer.invoke("atelier:getDocument", id, namespace, name),
+    getDocumentReadOnlyStatus: (
+      id: string,
+      namespace: string,
+      name: string,
+    ): Promise<DocumentReadOnlyStatus> =>
+      ipcRenderer.invoke("atelier:getDocumentReadOnlyStatus", id, namespace, name),
     searchInFiles: (
       id: string,
       namespace: string,

@@ -1,8 +1,15 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import * as monaco from "monaco-editor";
-import { OBJECTSCRIPT_LANGUAGE_ID, registerObjectScriptLanguage } from "../monaco/objectscript-language";
+import {
+  OBJECTSCRIPT_LANGUAGE_ID,
+  registerObjectScriptLanguage,
+} from "../monaco/objectscript-language";
 import { registerObjectScriptCompletion } from "../monaco/objectscript-completion";
-import { extractClassNameAt, goToClassReference, registerObjectScriptDefinition } from "../monaco/classReferenceNavigation";
+import {
+  extractClassNameAt,
+  goToClassReference,
+  registerObjectScriptDefinition,
+} from "../monaco/classReferenceNavigation";
 import { registerObjectScriptHover } from "../monaco/objectscript-hover";
 import { computeParameterUsageDecorations } from "../monaco/parameterHighlight";
 import { registerAllBuiltinThemes } from "../themes/registry";
@@ -11,6 +18,7 @@ import type { Diagnostic } from "../utils/diagnostics";
 export interface EditorTab {
   id: string;
   content: string;
+  readOnly?: boolean;
 }
 
 interface CodeEditorProps {
@@ -49,6 +57,7 @@ const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEd
   }
 
   const tabIdsKey = tabs.map((tab) => tab.id).join(",");
+  const activeReadOnly = tabs.find((tab) => tab.id === activeTabId)?.readOnly ?? false;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -115,7 +124,11 @@ const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEd
 
     for (const tab of tabs) {
       if (modelsRef.current.has(tab.id)) continue;
-      const model = monaco.editor.createModel(tab.content, OBJECTSCRIPT_LANGUAGE_ID, monaco.Uri.parse(`inmemory://tab/${tab.id}`));
+      const model = monaco.editor.createModel(
+        tab.content,
+        OBJECTSCRIPT_LANGUAGE_ID,
+        monaco.Uri.parse(`inmemory://tab/${tab.id}`),
+      );
       modelsRef.current.set(tab.id, model);
       listenersRef.current.set(
         tab.id,
@@ -134,6 +147,15 @@ const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEd
     const model = modelsRef.current.get(activeTabId);
     if (model) editorRef.current.setModel(model);
   }, [ready, activeTabId, tabIdsKey]);
+
+  // readOnly is an editor-level option (there's one shared editor across all tabs' models — see
+  // above), so it has to be re-applied on every tab switch rather than living on the model. Read-only
+  // status usually isn't known yet when a tab first opens (it's a separate, async server check — see
+  // App.tsx's applyReadOnlyStatus), so this also re-fires once that resolves for the active tab.
+  useEffect(() => {
+    if (!ready || !editorRef.current) return;
+    editorRef.current.updateOptions({ readOnly: activeReadOnly });
+  }, [ready, activeTabId, activeReadOnly]);
 
   useEffect(() => {
     if (ready) monaco.editor.setTheme(theme);
@@ -154,7 +176,10 @@ const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEd
             startColumn: 1,
             endColumn: model.getLineMaxColumn(line),
             message: diagnostic.message,
-            severity: diagnostic.severity === "error" ? monaco.MarkerSeverity.Error : monaco.MarkerSeverity.Warning,
+            severity:
+              diagnostic.severity === "error"
+                ? monaco.MarkerSeverity.Error
+                : monaco.MarkerSeverity.Warning,
           };
         }),
       );

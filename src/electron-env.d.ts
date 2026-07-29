@@ -5,6 +5,7 @@ import type {
   AtelierQueryResult,
   AtelierSearchFileResult,
   AtelierServerInfo,
+  DocumentReadOnlyStatus,
   RestCallResult,
   StudioMenu,
   StudioUserAction,
@@ -35,6 +36,11 @@ export interface ElectronAPI {
       includeSystem?: boolean,
     ) => Promise<AtelierDocNameEntry[]>;
     getDocument: (id: string, namespace: string, name: string) => Promise<AtelierDocument>;
+    getDocumentReadOnlyStatus: (
+      id: string,
+      namespace: string,
+      name: string,
+    ) => Promise<DocumentReadOnlyStatus>;
     searchInFiles: (
       id: string,
       namespace: string,
