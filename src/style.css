@@ -412,8 +412,20 @@ body {
 .sidebar {
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  /* Grid, not flex: row 1 (Explorador) is a flexible track that gets whatever row 2 (Conexões)
+     doesn't need; row 2 sizes to its own content, capped via .fixed-size below. This used to be
+     flex (`flex: 1 1 auto` / `flex: 0 1 auto`), but flexbox's shrink algorithm weighs each item by
+     its own *content-based* hypothetical size — and Explorador's hypothetical size is enormous (the
+     virtualized file list's real, un-shrunk content height can be tens of thousands of pixels; see
+     FileExplorer.tsx's `.file-tree` height), which skewed the shrink math so badly that Conexões
+     barely shrank at all and got pushed past the bottom instead. A `minmax(0, 1fr)` grid track's
+     size doesn't depend on its own content's size at all — it's just "the leftover space" — so this
+     class of bug can't recur regardless of how tall the file list's real content is. */
+  grid-template-rows: minmax(0, 1fr) auto;
+  /* Safety net, not the primary mechanism (each section scrolls internally — see
+     .sidebar-section-body/.file-tree-viewport). Kept in case some future content still manages to
+     overflow — reachable via scroll beats silently clipped. */
   overflow-y: auto;
   border-right: 1px solid var(--border);
   font-size: 12px;
@@ -461,19 +473,23 @@ body {
 }
 
 .sidebar-section {
-  flex: 0 0 auto;
+  /* Still a flex column internally, for its own header+body stacking — just no longer a *flex item*
+     of .sidebar itself (that's a grid now, see above). min-height/min-width: 0 keep this from
+     forcing its grid row/column larger than intended by its own content's automatic minimum size. */
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   border-bottom: 1px solid var(--border);
 }
 
-.sidebar-section.collapsed {
-  flex: 0 0 auto;
-}
-
-.sidebar-section:not(.collapsed) {
-  flex: 1 1 auto;
+/* A section that sizes to its own content and gets capped rather than being allowed to grow — e.g.
+   Conexões, which shouldn't take over the sidebar just because there happen to be many saved
+   connections. vh, not %, so the cap is always a definite value regardless of how the ancestor
+   chain's heights resolve. A long list still scrolls internally (.sidebar-section-body already has
+   its own overflow-y: auto) once it hits the cap. */
+.sidebar-section.fixed-size:not(.collapsed) {
+  max-height: 40vh;
 }
 
 .sidebar-section-header {
@@ -579,6 +595,42 @@ body {
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
+}
+
+/* Covers the whole window (not just the sidebar) while a server connection is in flight, so
+   switching servers reads as "loading" instead of the UI looking stuck — see ConnectionsPanel's
+   `connect()`. z-index sits above modals/context menus since a connect can be triggered from
+   either. */
+.connecting-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+}
+
+.connecting-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  animation: connecting-spin 0.8s linear infinite;
+}
+
+.connecting-message {
+  font-size: 13px;
+}
+
+@keyframes connecting-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .modal {
@@ -1106,21 +1158,43 @@ body {
   opacity: 1;
 }
 
-.file-tree,
-.file-tree ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* The Explorador section body is a flex column so the file tree — the only part that can get large
+   — is the one flexible, independently-scrolling region; the namespace/filter/system-files controls
+   above it stay a fixed size and always stay in view instead of scrolling away with the list. */
+.documents-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
-.file-tree ul {
-  padding-left: 14px;
+.documents-list > .namespace-select,
+.documents-list > input,
+.documents-list > .show-system-toggle {
+  flex: 0 0 auto;
 }
 
-.file-tree-folder-label,
-.file-tree-file {
-  display: block;
-  padding: 2px 4px;
+/* Virtualized: only the rows scrolled into view (plus a small overscan) are ever mounted, so this
+   stays equally light whether the namespace has a dozen classes or a hundred thousand — see
+   FileExplorer.tsx. `.file-tree`'s height is set inline to rows.length * ROW_HEIGHT purely so the
+   scrollbar's size/position reflect the true (unmounted) row count; each row is positioned with an
+   inline `top` computed from its index, matching the row-height constant used for that math. */
+.file-tree-viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.file-tree {
+  position: relative;
+}
+
+.file-tree-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
   cursor: pointer;
   border-radius: 4px;
   overflow: hidden;
@@ -1128,8 +1202,7 @@ body {
   white-space: nowrap;
 }
 
-.file-tree-folder-label:hover,
-.file-tree-file:hover {
+.file-tree-row:hover {
   background: var(--bg-hover);
 }
 
@@ -1268,6 +1341,10 @@ body {
   border: 1px solid var(--border-input);
   border-radius: 4px;
   padding: 4px 8px;
+}
+
+.search-panel-bar .search-mask-input {
+  flex: 0 1 140px;
 }
 
 .search-panel-bar button {

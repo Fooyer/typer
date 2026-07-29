@@ -32,18 +32,23 @@ function splitSegments(docName: string): string[] {
 
 export function buildDocumentTree(docs: AtelierDocNameEntry[]): TreeNode[] {
   const root: TreeFolder = { type: "folder", name: "", path: "", children: [] };
+  // Looking up a folder by scanning `current.children` (as before) is O(siblings) per segment, and a
+  // package with thousands of same-level classes/subfolders made that quadratic. A path is unique
+  // across the whole tree (it's just the chain of segment names from the root), so a single global
+  // map gives the same merge behavior as the old scoped-by-parent lookup in O(1) instead.
+  const folderIndex = new Map<string, TreeFolder>([["", root]]);
 
   for (const doc of docs) {
     const segments = splitSegments(doc.name);
     let current = root;
+    let currentPath = "";
     for (let i = 0; i < segments.length - 1; i++) {
       const segment = segments[i];
-      const path = current.path ? `${current.path}.${segment}` : segment;
-      let folder = current.children.find(
-        (child): child is TreeFolder => child.type === "folder" && child.name === segment,
-      );
+      currentPath = currentPath ? `${currentPath}.${segment}` : segment;
+      let folder = folderIndex.get(currentPath);
       if (!folder) {
-        folder = { type: "folder", name: segment, path, children: [] };
+        folder = { type: "folder", name: segment, path: currentPath, children: [] };
+        folderIndex.set(currentPath, folder);
         current.children.push(folder);
       }
       current = folder;

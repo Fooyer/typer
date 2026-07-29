@@ -9,7 +9,9 @@ import type { AtelierConnectionConfig } from "./atelier";
 function toAtelierConfig(profile: ConnectionProfile): AtelierConnectionConfig {
   const password = connections.getPassword(profile.id);
   if (password === undefined) {
-    throw new Error(`Sem senha salva para "${profile.name}". Edite a conexão e informe a senha novamente.`);
+    throw new Error(
+      `Sem senha salva para "${profile.name}". Edite a conexão e informe a senha novamente.`,
+    );
   }
   return {
     host: profile.host,
@@ -28,7 +30,9 @@ function getProfileOrThrow(id: string): ConnectionProfile {
 }
 
 export function registerIpcHandlers(): void {
-  ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
+  ipcMain.handle("window:minimize", (event) =>
+    BrowserWindow.fromWebContents(event.sender)?.minimize(),
+  );
 
   ipcMain.handle("window:toggleMaximize", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -66,15 +70,42 @@ export function registerIpcHandlers(): void {
     return info.namespaces;
   });
 
-  ipcMain.handle("atelier:listDocuments", async (_event, id: string, namespace: string, includeSystem?: boolean) => {
-    const profile = getProfileOrThrow(id);
-    return atelier.listDocuments(toAtelierConfig(profile), namespace, includeSystem);
-  });
+  ipcMain.handle(
+    "atelier:listDocuments",
+    async (_event, id: string, namespace: string, includeSystem?: boolean) => {
+      const profile = getProfileOrThrow(id);
+      return atelier.listDocuments(toAtelierConfig(profile), namespace, includeSystem);
+    },
+  );
 
-  ipcMain.handle("atelier:getDocument", async (_event, id: string, namespace: string, name: string) => {
-    const profile = getProfileOrThrow(id);
-    return atelier.getDocument(toAtelierConfig(profile), namespace, name);
-  });
+  ipcMain.handle(
+    "atelier:getDocument",
+    async (_event, id: string, namespace: string, name: string) => {
+      const profile = getProfileOrThrow(id);
+      return atelier.getDocument(toAtelierConfig(profile), namespace, name);
+    },
+  );
+
+  ipcMain.handle(
+    "atelier:searchInFiles",
+    async (
+      _event,
+      id: string,
+      namespace: string,
+      query: string,
+      documents: string,
+      includeSystem?: boolean,
+    ) => {
+      const profile = getProfileOrThrow(id);
+      return atelier.searchInFiles(
+        toAtelierConfig(profile),
+        namespace,
+        query,
+        documents,
+        includeSystem,
+      );
+    },
+  );
 
   ipcMain.handle(
     "atelier:saveDocument",
@@ -84,47 +115,94 @@ export function registerIpcHandlers(): void {
     },
   );
 
-  ipcMain.handle("atelier:deleteDocument", async (_event, id: string, namespace: string, name: string) => {
-    const profile = getProfileOrThrow(id);
-    await atelier.deleteDocument(toAtelierConfig(profile), namespace, name);
-  });
+  ipcMain.handle(
+    "atelier:deleteDocument",
+    async (_event, id: string, namespace: string, name: string) => {
+      const profile = getProfileOrThrow(id);
+      await atelier.deleteDocument(toAtelierConfig(profile), namespace, name);
+    },
+  );
 
-  ipcMain.handle("atelier:compile", async (_event, id: string, namespace: string, docs: string[]) => {
-    const profile = getProfileOrThrow(id);
-    return atelier.compileDocuments(toAtelierConfig(profile), namespace, docs);
-  });
+  ipcMain.handle(
+    "atelier:compile",
+    async (_event, id: string, namespace: string, docs: string[]) => {
+      const profile = getProfileOrThrow(id);
+      return atelier.compileDocuments(toAtelierConfig(profile), namespace, docs);
+    },
+  );
 
-  ipcMain.handle("atelier:query", async (_event, id: string, namespace: string, sql: string, parameters: unknown[]) => {
-    const profile = getProfileOrThrow(id);
-    return atelier.runQuery(toAtelierConfig(profile), namespace, sql, parameters);
-  });
+  ipcMain.handle(
+    "atelier:query",
+    async (_event, id: string, namespace: string, sql: string, parameters: unknown[]) => {
+      const profile = getProfileOrThrow(id);
+      return atelier.runQuery(toAtelierConfig(profile), namespace, sql, parameters);
+    },
+  );
 
   ipcMain.handle(
     "atelier:callRoute",
-    async (_event, id: string, path: string, method: string, headers: Record<string, string>, body?: string) => {
+    async (
+      _event,
+      id: string,
+      path: string,
+      method: string,
+      headers: Record<string, string>,
+      body?: string,
+    ) => {
       const profile = getProfileOrThrow(id);
       return atelier.callRestRoute(toAtelierConfig(profile), path, method, headers, body);
     },
   );
 
-  ipcMain.handle("atelier:isStudioExtensionEnabled", async (_event, id: string, namespace: string) => {
-    const profile = getProfileOrThrow(id);
-    return atelier.isStudioExtensionEnabled(toAtelierConfig(profile), namespace);
-  });
+  ipcMain.handle(
+    "atelier:isStudioExtensionEnabled",
+    async (_event, id: string, namespace: string) => {
+      const profile = getProfileOrThrow(id);
+      return atelier.isStudioExtensionEnabled(toAtelierConfig(profile), namespace);
+    },
+  );
 
   ipcMain.handle(
     "atelier:getStudioMenus",
-    async (_event, id: string, namespace: string, menuType: "main" | "context", docName: string, selectedText?: string) => {
+    async (
+      _event,
+      id: string,
+      namespace: string,
+      menuType: "main" | "context",
+      docName: string,
+      selectedText?: string,
+    ) => {
       const profile = getProfileOrThrow(id);
-      return atelier.getStudioMenus(toAtelierConfig(profile), namespace, menuType, docName, selectedText);
+      return atelier.getStudioMenus(
+        toAtelierConfig(profile),
+        namespace,
+        menuType,
+        docName,
+        selectedText,
+      );
     },
   );
 
   ipcMain.handle(
     "atelier:invokeStudioUserAction",
-    async (_event, id: string, namespace: string, type: number, actionId: string, docName: string, selectedText?: string) => {
+    async (
+      _event,
+      id: string,
+      namespace: string,
+      type: number,
+      actionId: string,
+      docName: string,
+      selectedText?: string,
+    ) => {
       const profile = getProfileOrThrow(id);
-      return atelier.invokeStudioUserAction(toAtelierConfig(profile), namespace, type, actionId, docName, selectedText);
+      return atelier.invokeStudioUserAction(
+        toAtelierConfig(profile),
+        namespace,
+        type,
+        actionId,
+        docName,
+        selectedText,
+      );
     },
   );
 
@@ -141,7 +219,15 @@ export function registerIpcHandlers(): void {
       msg: string,
     ) => {
       const profile = getProfileOrThrow(id);
-      return atelier.invokeStudioAfterUserAction(toAtelierConfig(profile), namespace, type, actionId, docName, answer, msg);
+      return atelier.invokeStudioAfterUserAction(
+        toAtelierConfig(profile),
+        namespace,
+        type,
+        actionId,
+        docName,
+        answer,
+        msg,
+      );
     },
   );
 
@@ -156,7 +242,9 @@ export function registerIpcHandlers(): void {
         { name: "Todos os arquivos", extensions: ["*"] },
       ],
     };
-    const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+    const result = win
+      ? await dialog.showSaveDialog(win, options)
+      : await dialog.showSaveDialog(options);
     if (result.canceled || !result.filePath) return null;
     await fs.writeFile(result.filePath, content, "utf-8");
     return result.filePath;

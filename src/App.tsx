@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as monaco from "monaco-editor";
 import ApiTester from "./components/ApiTester";
 import CodeEditor, { type CodeEditorHandle } from "./components/CodeEditor";
@@ -9,16 +9,41 @@ import type { SearchMatch } from "./components/SearchPanel";
 import SqlRunner from "./components/SqlRunner";
 import StudioDialogModal, { type StudioDialogRequest } from "./components/StudioDialogModal";
 import { applyAppChrome } from "./themes/appearance";
-import { getAllThemes, registerCustomTheme, type AppTheme } from "./themes/registry";
+import {
+  BUILTIN_THEMES,
+  getAllThemes,
+  getTheme,
+  registerCustomTheme,
+  type AppTheme,
+} from "./themes/registry";
 import type { VSCodeTheme } from "./themes/convert";
 import { parseCompileDiagnostics, type Diagnostic } from "./utils/diagnostics";
 import { isNoiseDocument } from "./utils/documentFilters";
+import { matchesAnyGlob } from "./utils/glob";
 import { mapWithConcurrency } from "./utils/concurrency";
 import { classSourceToExportXml } from "./utils/classXmlExport";
 import { downloadTextFile } from "./utils/download";
+import { loadThemePreference, saveThemePreference } from "./utils/themePreference";
 import { setClassReferenceOpener } from "./monaco/classReferenceNavigation";
 import { setClassMemberProvider, type ClassMember } from "./monaco/classMembers";
+import { setTypeParameterProvider } from "./monaco/typeParameters";
 import type { StudioMenu, StudioUserAction } from "../electron/atelier";
+
+// Read once at module load (before App() ever mounts) so a persisted custom theme is registered
+// into themes/registry.ts's in-memory theme list before the component's first render asks for it.
+const storedThemePreference = loadThemePreference();
+if (
+  storedThemePreference?.custom &&
+  storedThemePreference.custom.id === storedThemePreference.themeId
+) {
+  registerCustomTheme(
+    monaco,
+    storedThemePreference.custom.id,
+    storedThemePreference.custom.label,
+    storedThemePreference.custom.kind,
+    storedThemePreference.custom.vscodeTheme,
+  );
+}
 
 const SAMPLE = `Class Demo.Hello Extends %RegisteredObject
 {
@@ -73,11 +98,16 @@ function App() {
   const [outputHeight, setOutputHeight] = useState(200);
   const [logLines, setLogLines] = useState<LogLine[]>([]);
   const [themes, setThemes] = useState<AppTheme[]>(() => getAllThemes());
-  const [themeId, setThemeId] = useState(themes[0].id);
+  const [themeId, setThemeId] = useState(() =>
+    storedThemePreference && getTheme(storedThemePreference.themeId)
+      ? storedThemePreference.themeId
+      : themes[0].id,
+  );
   const [studioMenus, setStudioMenus] = useState<StudioMenu[]>([]);
   const [studioDialog, setStudioDialog] = useState<StudioDialogRequest | null>(null);
   const [outputTab, setOutputTab] = useState<OutputTab>("log");
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchMask, setSearchMask] = useState("");
   const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
   const [searchRunning, setSearchRunning] = useState(false);
   const [searchStatus, setSearchStatus] = useState("");
@@ -99,9 +129,25 @@ function App() {
 
   function selectTheme(id: string) {
     setThemeId(id);
-    const theme = themes.find((t) => t.id === id);
-    if (theme) applyAppChrome(theme);
+    const theme = getTheme(id);
+    if (!theme) return;
+    applyAppChrome(theme);
+    const isBuiltin = BUILTIN_THEMES.some((builtin) => builtin.id === theme.id);
+    saveThemePreference({
+      themeId: theme.id,
+      custom: isBuiltin
+        ? undefined
+        : { id: theme.id, label: theme.label, kind: theme.kind, vscodeTheme: theme.vscodeTheme },
+    });
   }
+
+  // Applies the restored (or default) theme's chrome colors before the first paint, so the app never
+  // flashes the CSS file's hardcoded default colors before correcting itself to the saved theme.
+  useLayoutEffect(() => {
+    const theme = getTheme(themeId);
+    if (theme) applyAppChrome(theme);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function importThemeFile(file: File) {
     let parsed: VSCodeTheme;
@@ -129,11 +175,18 @@ function App() {
   }
 
   function handleDocumentDeleted(connectionId: string, namespace: string, docName: string) {
-    const tab = tabs.find((t) => t.connectionId === connectionId && t.namespace === namespace && t.docName === docName);
+    const tab = tabs.find(
+      (t) => t.connectionId === connectionId && t.namespace === namespace && t.docName === docName,
+    );
     if (tab) removeTab(tab.id);
   }
 
-  function handleDocumentRenamed(connectionId: string, namespace: string, oldName: string, newName: string) {
+  function handleDocumentRenamed(
+    connectionId: string,
+    namespace: string,
+    oldName: string,
+    newName: string,
+  ) {
     setTabs((prev) =>
       prev.map((t) =>
         t.connectionId === connectionId && t.namespace === namespace && t.docName === oldName
@@ -143,9 +196,15 @@ function App() {
     );
   }
 
-  function handleOpenDocument(connectionId: string, namespace: string, name: string, content: string) {
+  function handleOpenDocument(
+    connectionId: string,
+    namespace: string,
+    name: string,
+    content: string,
+  ) {
     const existing = tabs.find(
-      (tab) => tab.connectionId === connectionId && tab.namespace === namespace && tab.docName === name,
+      (tab) =>
+        tab.connectionId === connectionId && tab.namespace === namespace && tab.docName === name,
     );
     if (existing) {
       setActiveTabId(existing.id);
@@ -154,7 +213,16 @@ function App() {
     const id = `doc-${nextTabId.current++}`;
     setTabs((prev) => [
       ...prev,
-      { id, kind: "code", title: name, content, savedContent: content, connectionId, namespace, docName: name },
+      {
+        id,
+        kind: "code",
+        title: name,
+        content,
+        savedContent: content,
+        connectionId,
+        namespace,
+        docName: name,
+      },
     ]);
     setActiveTabId(id);
     appendLog(`${name} aberto (${namespace}).`, "success");
@@ -164,13 +232,17 @@ function App() {
     if (!hasElectronAPI) return;
     const context = activeTab?.connectionId && activeTab.namespace ? activeTab : null;
     if (!context?.connectionId || !context.namespace) {
-      appendLog(`Não é possível abrir "${className}": a aba atual não está ligada a um servidor.`, "error");
+      appendLog(
+        `Não é possível abrir "${className}": a aba atual não está ligada a um servidor.`,
+        "error",
+      );
       return;
     }
     const { connectionId, namespace } = context;
     const docName = `${className}.cls`;
     const existing = tabs.find(
-      (tab) => tab.connectionId === connectionId && tab.namespace === namespace && tab.docName === docName,
+      (tab) =>
+        tab.connectionId === connectionId && tab.namespace === namespace && tab.docName === docName,
     );
     if (existing) {
       setActiveTabId(existing.id);
@@ -187,7 +259,8 @@ function App() {
 
   async function openServerDocument(connectionId: string, namespace: string, name: string) {
     const existing = tabs.find(
-      (tab) => tab.connectionId === connectionId && tab.namespace === namespace && tab.docName === name,
+      (tab) =>
+        tab.connectionId === connectionId && tab.namespace === namespace && tab.docName === name,
     );
     if (existing) {
       setActiveTabId(existing.id);
@@ -206,7 +279,8 @@ function App() {
     if (!scope) return;
     const { connectionId, namespace } = scope;
     const existing = tabs.find(
-      (tab) => tab.connectionId === connectionId && tab.namespace === namespace && tab.docName === docName,
+      (tab) =>
+        tab.connectionId === connectionId && tab.namespace === namespace && tab.docName === docName,
     );
     if (existing) {
       setActiveTabId(existing.id);
@@ -219,7 +293,16 @@ function App() {
       const content = doc.content.join("\n");
       setTabs((prev) => [
         ...prev,
-        { id, kind: "code", title: docName, content, savedContent: content, connectionId, namespace, docName },
+        {
+          id,
+          kind: "code",
+          title: docName,
+          content,
+          savedContent: content,
+          connectionId,
+          namespace,
+          docName,
+        },
       ]);
       setActiveTabId(id);
       requestAnimationFrame(() => codeEditorRef.current?.revealLine(id, line));
@@ -228,10 +311,86 @@ function App() {
     }
   }
 
-  // Mirrors Studio's Ctrl+Shift+F "Find in Files": downloads every document in the active
-  // connection/namespace and greps their lines client-side, since the Atelier REST API has no
-  // documented full-text search endpoint. Concurrency is capped (see mapWithConcurrency) because
-  // hammering IRIS with one unauthenticated-per-request burst can exhaust its session pool.
+  const DEFAULT_SEARCH_MASK = "*.cls,*.int";
+
+  // Tries IRIS's server-side full-text search first (Atelier API v2, IRIS 2023.1+): one request,
+  // IRIS greps on its end and returns only matches. Servers older than v2 (or with the route
+  // disabled) throw — see searchInFiles's doc comment — and we fall back to the slower path below.
+  async function runFindInFilesViaServer(
+    connectionId: string,
+    namespace: string,
+    query: string,
+    mask: string,
+    token: number,
+  ): Promise<SearchMatch[] | null> {
+    const documents = mask.trim() || DEFAULT_SEARCH_MASK;
+    const results = await window.electronAPI.atelier.searchInFiles(
+      connectionId,
+      namespace,
+      query,
+      documents,
+    );
+    if (searchTokenRef.current !== token) return null;
+    const matches: SearchMatch[] = [];
+    for (const entry of results) {
+      // An explicit mask means the user chose exactly where to search — don't second-guess it by
+      // hiding ENS/CSPX noise on top; only apply that default-noise filter when they didn't ask.
+      if (!mask.trim() && isNoiseDocument(entry.doc)) continue;
+      for (const match of entry.matches) {
+        if (searchCaseSensitive && !match.text.includes(query)) continue;
+        matches.push({ docName: entry.doc, line: match.line, text: match.text });
+      }
+    }
+    return matches;
+  }
+
+  // Mirrors Studio's Ctrl+Shift+F "Find in Files" on servers without the v2 search route:
+  // downloads every document in the active connection/namespace and greps their lines client-side.
+  // Concurrency is capped (see mapWithConcurrency) because hammering IRIS with one
+  // unauthenticated-per-request burst can exhaust its session pool.
+  async function runFindInFilesByDownload(
+    connectionId: string,
+    namespace: string,
+    query: string,
+    mask: string,
+    token: number,
+  ): Promise<SearchMatch[] | null> {
+    setSearchStatus(`Listando arquivos em ${namespace}…`);
+    const docs = await window.electronAPI.atelier.listDocuments(connectionId, namespace);
+    if (searchTokenRef.current !== token) return null;
+    const targets = docs.filter((doc) =>
+      mask.trim() ? matchesAnyGlob(mask, doc.name) : !isNoiseDocument(doc.name),
+    );
+    setSearchStatus(`Pesquisando "${query}" em ${targets.length} arquivo(s)…`);
+    const needle = searchCaseSensitive ? query : query.toLowerCase();
+    const matches: SearchMatch[] = [];
+    let scanned = 0;
+    await mapWithConcurrency(targets, 6, async (doc) => {
+      if (searchTokenRef.current !== token) return;
+      try {
+        const document = await window.electronAPI.atelier.getDocument(
+          connectionId,
+          namespace,
+          doc.name,
+        );
+        document.content.forEach((lineText, index) => {
+          const haystack = searchCaseSensitive ? lineText : lineText.toLowerCase();
+          if (haystack.includes(needle))
+            matches.push({ docName: doc.name, line: index + 1, text: lineText });
+        });
+      } catch {
+        // skip unreadable docs rather than aborting the whole search
+      } finally {
+        scanned++;
+        if (searchTokenRef.current === token) {
+          setSearchStatus(`Pesquisando "${query}"… ${scanned}/${targets.length} arquivo(s)`);
+        }
+      }
+    });
+    if (searchTokenRef.current !== token) return null;
+    return matches;
+  }
+
   async function runFindInFiles() {
     if (!hasElectronAPI) return;
     const context = activeTab?.connectionId && activeTab.namespace ? activeTab : null;
@@ -246,44 +405,48 @@ function App() {
     searchScopeRef.current = { connectionId, namespace };
     setSearchRunning(true);
     setSearchResults([]);
-    setSearchStatus(`Listando arquivos em ${namespace}…`);
+    setSearchStatus(`Pesquisando "${query}" em ${namespace}…`);
+    const mask = searchMask;
     try {
-      const docs = await window.electronAPI.atelier.listDocuments(connectionId, namespace);
-      if (searchTokenRef.current !== token) return;
-      const targets = docs.filter((doc) => !isNoiseDocument(doc.name));
-      setSearchStatus(`Pesquisando "${query}" em ${targets.length} arquivo(s)…`);
-      const needle = searchCaseSensitive ? query : query.toLowerCase();
-      const matches: SearchMatch[] = [];
-      let scanned = 0;
-      await mapWithConcurrency(targets, 6, async (doc) => {
+      let matches: SearchMatch[] | null = null;
+      try {
+        matches = await runFindInFilesViaServer(connectionId, namespace, query, mask, token);
+      } catch (serverSearchError) {
         if (searchTokenRef.current !== token) return;
-        try {
-          const document = await window.electronAPI.atelier.getDocument(connectionId, namespace, doc.name);
-          document.content.forEach((lineText, index) => {
-            const haystack = searchCaseSensitive ? lineText : lineText.toLowerCase();
-            if (haystack.includes(needle)) matches.push({ docName: doc.name, line: index + 1, text: lineText });
-          });
-        } catch {
-          // skip unreadable docs rather than aborting the whole search
-        } finally {
-          scanned++;
-          if (searchTokenRef.current === token) {
-            setSearchStatus(`Pesquisando "${query}"… ${scanned}/${targets.length} arquivo(s)`);
-          }
-        }
-      });
+        appendLog(
+          `Busca server-side (v2/action/search) indisponível: ${(serverSearchError as Error).message} — usando download por arquivo.`,
+          "info",
+        );
+      }
       if (searchTokenRef.current !== token) return;
+      if (!matches) {
+        matches = await runFindInFilesByDownload(connectionId, namespace, query, mask, token);
+      }
+      if (!matches || searchTokenRef.current !== token) return;
       matches.sort((a, b) => a.docName.localeCompare(b.docName) || a.line - b.line);
       setSearchResults(matches);
       const fileCount = new Set(matches.map((m) => m.docName)).size;
       setSearchStatus(
-        matches.length ? `${matches.length} ocorrência(s) em ${fileCount} arquivo(s).` : "Nenhuma ocorrência encontrada.",
+        matches.length
+          ? `${matches.length} ocorrência(s) em ${fileCount} arquivo(s).`
+          : "Nenhuma ocorrência encontrada.",
       );
     } catch (error) {
-      if (searchTokenRef.current === token) setSearchStatus(`Erro na pesquisa: ${(error as Error).message}`);
+      if (searchTokenRef.current === token)
+        setSearchStatus(`Erro na pesquisa: ${(error as Error).message}`);
     } finally {
       if (searchTokenRef.current === token) setSearchRunning(false);
     }
+  }
+
+  // Bumping the token makes every pending checkpoint in runFindInFilesViaServer/ByDownload bail out
+  // on its next await instead of applying stale results — see the `searchTokenRef.current !== token`
+  // guards throughout both. Requests already in flight (up to 6, for the download path) still finish
+  // over the wire, but nothing further is dispatched and nothing they return gets shown.
+  function cancelSearch() {
+    searchTokenRef.current++;
+    setSearchRunning(false);
+    setSearchStatus("Pesquisa cancelada.");
   }
 
   function openFindInFiles() {
@@ -325,7 +488,8 @@ function App() {
           answer,
           "",
         );
-        if (after) await processStudioAction(connectionId, namespace, docName, menuType, actionId, after);
+        if (after)
+          await processStudioAction(connectionId, namespace, docName, menuType, actionId, after);
         return;
       }
       case 2: {
@@ -340,7 +504,9 @@ function App() {
             [result.target],
           );
           const token = (tokenResult.rows[0] as Record<string, unknown> | undefined)?.Token;
-          const profile = (await window.electronAPI.connections.list()).find((p) => p.id === connectionId);
+          const profile = (await window.electronAPI.connections.list()).find(
+            (p) => p.id === connectionId,
+          );
           if (profile && token) {
             const protocol = profile.https ? "https" : "http";
             const base = `${protocol}://${profile.host}:${profile.port}${profile.pathPrefix ?? ""}`;
@@ -360,12 +526,17 @@ function App() {
           answer,
           "",
         );
-        if (after) await processStudioAction(connectionId, namespace, docName, menuType, actionId, after);
+        if (after)
+          await processStudioAction(connectionId, namespace, docName, menuType, actionId, after);
         return;
       }
       case 3: {
         if (/^(https?|ftp):\/\//i.test(result.target)) window.open(result.target, "_blank");
-        else appendLog(`Ação do servidor pediu para executar "${result.target}", não suportado neste cliente.`, "error");
+        else
+          appendLog(
+            `Ação do servidor pediu para executar "${result.target}", não suportado neste cliente.`,
+            "error",
+          );
         return;
       }
       case 4: {
@@ -400,7 +571,8 @@ function App() {
           "1",
           "",
         );
-        if (after) await processStudioAction(connectionId, namespace, docName, menuType, actionId, after);
+        if (after)
+          await processStudioAction(connectionId, namespace, docName, menuType, actionId, after);
         return;
       }
       case 7: {
@@ -423,7 +595,8 @@ function App() {
           answer.answer,
           answer.msg ?? result.message ?? "",
         );
-        if (after) await processStudioAction(connectionId, namespace, docName, menuType, actionId, after);
+        if (after)
+          await processStudioAction(connectionId, namespace, docName, menuType, actionId, after);
         return;
       }
       default:
@@ -440,12 +613,23 @@ function App() {
     const docName = activeTab?.docName;
     if (!hasElectronAPI || !connectionId || !namespace || !docName) return;
     try {
-      const enabled = await window.electronAPI.atelier.isStudioExtensionEnabled(connectionId, namespace);
+      const enabled = await window.electronAPI.atelier.isStudioExtensionEnabled(
+        connectionId,
+        namespace,
+      );
       if (!enabled) return;
-      const menus = await window.electronAPI.atelier.getStudioMenus(connectionId, namespace, "main", docName);
+      const menus = await window.electronAPI.atelier.getStudioMenus(
+        connectionId,
+        namespace,
+        "main",
+        docName,
+      );
       setStudioMenus(menus);
       const summary = menus
-        .map((menu) => `${menu.name}: [${menu.items.map((item) => `${item.name}=${item.enabled}`).join(", ")}]`)
+        .map(
+          (menu) =>
+            `${menu.name}: [${menu.items.map((item) => `${item.name}=${item.enabled}`).join(", ")}]`,
+        )
         .join(" | ");
       appendLog(`[studio] menus atualizados -> ${summary}`, "info");
     } catch {
@@ -454,7 +638,8 @@ function App() {
   }
 
   async function runStudioAction(actionId: string) {
-    if (!hasElectronAPI || !activeTab?.connectionId || !activeTab.namespace || !activeTab.docName) return;
+    if (!hasElectronAPI || !activeTab?.connectionId || !activeTab.namespace || !activeTab.docName)
+      return;
     const { connectionId, namespace, docName } = activeTab;
     const menuType = 0;
     const selectedText = codeEditorRef.current?.getSelectedText() ?? "";
@@ -467,7 +652,8 @@ function App() {
         docName,
         selectedText,
       );
-      if (result) await processStudioAction(connectionId, namespace, docName, menuType, actionId, result);
+      if (result)
+        await processStudioAction(connectionId, namespace, docName, menuType, actionId, result);
     } catch (error) {
       appendLog(`Erro ao executar ação do servidor: ${(error as Error).message}`, "error");
     } finally {
@@ -482,7 +668,10 @@ function App() {
       return;
     }
     const id = `sql-${nextTabId.current++}`;
-    setTabs((prev) => [...prev, { id, kind: "sql", title: "Consulta SQL", content: "", savedContent: "" }]);
+    setTabs((prev) => [
+      ...prev,
+      { id, kind: "sql", title: "Consulta SQL", content: "", savedContent: "" },
+    ]);
     setActiveTabId(id);
   }
 
@@ -490,7 +679,11 @@ function App() {
   // was opened) so ApiTester can parse its XData UrlMap without a second server round trip.
   function openApiTab(connectionId: string, namespace: string, docName: string, content: string) {
     const existing = tabs.find(
-      (tab) => tab.kind === "api" && tab.connectionId === connectionId && tab.namespace === namespace && tab.docName === docName,
+      (tab) =>
+        tab.kind === "api" &&
+        tab.connectionId === connectionId &&
+        tab.namespace === namespace &&
+        tab.docName === docName,
     );
     if (existing) {
       setActiveTabId(existing.id);
@@ -506,13 +699,29 @@ function App() {
   }
 
   function openApiTesterForActiveTab() {
-    if (!activeTab || activeTab.kind !== "code" || !activeTab.connectionId || !activeTab.namespace || !activeTab.docName) return;
+    if (
+      !activeTab ||
+      activeTab.kind !== "code" ||
+      !activeTab.connectionId ||
+      !activeTab.namespace ||
+      !activeTab.docName
+    )
+      return;
     // Uses the last-saved/compiled source, not the possibly-unsaved editor content — the tester
     // calls the live deployed endpoint, so its route list should match what the server actually runs.
-    openApiTab(activeTab.connectionId, activeTab.namespace, activeTab.docName, activeTab.savedContent);
+    openApiTab(
+      activeTab.connectionId,
+      activeTab.namespace,
+      activeTab.docName,
+      activeTab.savedContent,
+    );
   }
 
-  async function openApiTesterForDocument(connectionId: string, namespace: string, docName: string) {
+  async function openApiTesterForDocument(
+    connectionId: string,
+    namespace: string,
+    docName: string,
+  ) {
     try {
       const doc = await window.electronAPI.atelier.getDocument(connectionId, namespace, docName);
       openApiTab(connectionId, namespace, docName, doc.content.join("\n"));
@@ -568,11 +777,22 @@ function App() {
 
       // Compiling can change the document server-side (e.g. IRIS appends/updates a Storage
       // definition for persistent classes), so reload it instead of just marking the local edit as saved.
-      const recompiled = await window.electronAPI.atelier.getDocument(connectionId, namespace, docName);
+      const recompiled = await window.electronAPI.atelier.getDocument(
+        connectionId,
+        namespace,
+        docName,
+      );
       const freshContent = recompiled.content.join("\n");
-      setTabs((prev) => prev.map((t) => (t.id === tab.id ? { ...t, content: freshContent, savedContent: freshContent } : t)));
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === tab.id ? { ...t, content: freshContent, savedContent: freshContent } : t,
+        ),
+      );
       codeEditorRef.current?.setTabContent(tab.id, freshContent);
-      appendLog(`${docName} salvo e compilado.`, parsed.some((d) => d.severity === "error") ? "error" : "success");
+      appendLog(
+        `${docName} salvo e compilado.`,
+        parsed.some((d) => d.severity === "error") ? "error" : "success",
+      );
     } catch (error) {
       appendLog(`Erro ao salvar/compilar ${docName}: ${(error as Error).message}`, "error");
     }
@@ -659,12 +879,15 @@ function App() {
 
   // Powers dot-completion (##class(X)., ..Property, variable.) — see monaco/classMembers.ts and
   // objectscript-completion.ts. %Dictionary.CompiledMethod/CompiledProperty already reflect the
-  // full inherited member set, so a single query per class covers superclass members too.
+  // full inherited member set, so a single query per class covers superclass members too. Also
+  // powers `As Type(...)` type-parameter completion (monaco/typeParameters.ts) the same way, via
+  // %Dictionary.CompiledParameter — same connection/namespace, so it shares this effect.
   useEffect(() => {
     const connectionId = activeTab?.connectionId;
     const namespace = activeTab?.namespace;
     if (!hasElectronAPI || !connectionId || !namespace) {
       setClassMemberProvider(null);
+      setTypeParameterProvider(null);
       return;
     }
     setClassMemberProvider(async (className) => {
@@ -700,7 +923,28 @@ function App() {
         return [];
       }
     });
-    return () => setClassMemberProvider(null);
+    setTypeParameterProvider(async (typeName) => {
+      try {
+        const result = await window.electronAPI.atelier.query(
+          connectionId,
+          namespace,
+          "SELECT Name, Default, Description FROM %Dictionary.CompiledParameter WHERE parent = ?",
+          [typeName],
+        );
+        return result.rows.map((row) => ({
+          name: String(row.Name),
+          default:
+            row.Default !== null && row.Default !== undefined ? String(row.Default) : undefined,
+          doc: row.Description ? String(row.Description) : undefined,
+        }));
+      } catch {
+        return [];
+      }
+    });
+    return () => {
+      setClassMemberProvider(null);
+      setTypeParameterProvider(null);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab?.connectionId, activeTab?.namespace]);
 
@@ -718,12 +962,20 @@ function App() {
         return;
       }
       try {
-        const enabled = await window.electronAPI.atelier.isStudioExtensionEnabled(connectionId, namespace);
+        const enabled = await window.electronAPI.atelier.isStudioExtensionEnabled(
+          connectionId,
+          namespace,
+        );
         if (!enabled) {
           if (!cancelled) setStudioMenus([]);
           return;
         }
-        const menus = await window.electronAPI.atelier.getStudioMenus(connectionId, namespace, "main", docName);
+        const menus = await window.electronAPI.atelier.getStudioMenus(
+          connectionId,
+          namespace,
+          "main",
+          docName,
+        );
         if (!cancelled) setStudioMenus(menus);
       } catch {
         if (!cancelled) setStudioMenus([]);
@@ -737,7 +989,9 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab?.connectionId, activeTab?.namespace, activeTab?.docName]);
 
-  const pendingCloseTab = pendingCloseId ? tabs.find((tab) => tab.id === pendingCloseId) : undefined;
+  const pendingCloseTab = pendingCloseId
+    ? tabs.find((tab) => tab.id === pendingCloseId)
+    : undefined;
 
   const menus: MenuDef[] = [
     {
@@ -756,7 +1010,11 @@ function App() {
         },
         {
           label: "Testar Rotas da API…",
-          disabled: activeTab?.kind !== "code" || !activeTab?.connectionId || !activeTab.namespace || !activeTab.docName,
+          disabled:
+            activeTab?.kind !== "code" ||
+            !activeTab?.connectionId ||
+            !activeTab.namespace ||
+            !activeTab.docName,
           onSelect: openApiTesterForActiveTab,
         },
         { label: "Importar Tema…", onSelect: () => fileInputRef.current?.click() },
@@ -766,7 +1024,11 @@ function App() {
       label: "Ver",
       items: [
         { label: "Conexões", checked: panelOpen, onSelect: () => setPanelOpen((open) => !open) },
-        { label: "Saída (Output)", checked: outputOpen, onSelect: () => setOutputOpen((open) => !open) },
+        {
+          label: "Saída (Output)",
+          checked: outputOpen,
+          onSelect: () => setOutputOpen((open) => !open),
+        },
         { label: "Localizar em Arquivos…", shortcut: "Ctrl+Shift+F", onSelect: openFindInFiles },
         { label: "Consulta SQL…", onSelect: openSqlTab },
         {
@@ -835,7 +1097,15 @@ function App() {
             onClick={() => hasElectronAPI && window.electronAPI.windowControls.toggleMaximize()}
           >
             <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-              <rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1" />
+              <rect
+                x="0.5"
+                y="0.5"
+                width="9"
+                height="9"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1"
+              />
             </svg>
           </button>
           <button
@@ -902,16 +1172,26 @@ function App() {
               ))}
             </div>
             <div className="tab-bar-actions">
-              <button type="button" className="tab-new" onClick={openSqlTab} title="Nova consulta SQL">
+              <button
+                type="button"
+                className="tab-new"
+                onClick={openSqlTab}
+                title="Nova consulta SQL"
+              >
                 🗄️
               </button>
             </div>
           </div>
           <div className="editor-area">
-            <div className="editor-surface" style={{ display: activeTab?.kind === "code" ? "block" : "none" }}>
+            <div
+              className="editor-surface"
+              style={{ display: activeTab?.kind === "code" ? "block" : "none" }}
+            >
               <CodeEditor
                 ref={codeEditorRef}
-                tabs={tabs.filter((tab) => tab.kind === "code").map((tab) => ({ id: tab.id, content: tab.content }))}
+                tabs={tabs
+                  .filter((tab) => tab.kind === "code")
+                  .map((tab) => ({ id: tab.id, content: tab.content }))}
                 activeTabId={activeTab?.kind === "code" ? activeTabId : null}
                 onContentChange={updateTabContent}
                 diagnostics={diagnostics}
@@ -921,14 +1201,24 @@ function App() {
             {tabs
               .filter((tab) => tab.kind === "sql")
               .map((tab) => (
-                <div key={tab.id} className="editor-surface" style={{ display: tab.id === activeTabId ? "block" : "none" }}>
+                <div
+                  key={tab.id}
+                  className="editor-surface"
+                  style={{ display: tab.id === activeTabId ? "block" : "none" }}
+                >
                   <SqlRunner onLog={appendLog} />
                 </div>
               ))}
             {tabs
-              .filter((tab) => tab.kind === "api" && tab.connectionId && tab.namespace && tab.docName)
+              .filter(
+                (tab) => tab.kind === "api" && tab.connectionId && tab.namespace && tab.docName,
+              )
               .map((tab) => (
-                <div key={tab.id} className="editor-surface" style={{ display: tab.id === activeTabId ? "block" : "none" }}>
+                <div
+                  key={tab.id}
+                  className="editor-surface"
+                  style={{ display: tab.id === activeTabId ? "block" : "none" }}
+                >
                   <ApiTester
                     connectionId={tab.connectionId!}
                     namespace={tab.namespace!}
@@ -951,9 +1241,12 @@ function App() {
                   search={{
                     query: searchQuery,
                     onQueryChange: setSearchQuery,
+                    mask: searchMask,
+                    onMaskChange: setSearchMask,
                     caseSensitive: searchCaseSensitive,
                     onCaseSensitiveChange: setSearchCaseSensitive,
                     onSearch: () => void runFindInFiles(),
+                    onCancel: cancelSearch,
                     running: searchRunning,
                     status: searchStatus,
                     results: searchResults,
@@ -972,7 +1265,8 @@ function App() {
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <h4>Fechar sem salvar?</h4>
             <p>
-              "{pendingCloseTab.title}" tem alterações não salvas. Fechar mesmo assim descarta essas alterações.
+              "{pendingCloseTab.title}" tem alterações não salvas. Fechar mesmo assim descarta essas
+              alterações.
             </p>
             <div className="modal-actions">
               <button

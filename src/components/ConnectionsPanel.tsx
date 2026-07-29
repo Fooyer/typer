@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ConnectionProfile } from "../../electron/connections";
 import type { AtelierDocNameEntry } from "../../electron/atelier";
-import { buildDocumentTree, type TreeFile, type TreeFolder, type TreeNode } from "../utils/documentTree";
+import {
+  buildDocumentTree,
+  type TreeFile,
+  type TreeFolder,
+  type TreeNode,
+} from "../utils/documentTree";
 import { isNoiseDocument } from "../utils/documentFilters";
 import { matchesGlob } from "../utils/glob";
 import { classSourceToExportXml } from "../utils/classXmlExport";
@@ -14,7 +19,12 @@ interface ConnectionsPanelProps {
   onOpenDocument: (connectionId: string, namespace: string, name: string, content: string) => void;
   onLog: (message: string, level?: LogLevel) => void;
   onDocumentDeleted?: (connectionId: string, namespace: string, docName: string) => void;
-  onDocumentRenamed?: (connectionId: string, namespace: string, oldName: string, newName: string) => void;
+  onDocumentRenamed?: (
+    connectionId: string,
+    namespace: string,
+    oldName: string,
+    newName: string,
+  ) => void;
   onOpenApiTester?: (connectionId: string, namespace: string, docName: string) => void;
 }
 
@@ -34,7 +44,13 @@ const EMPTY_FORM = {
   password: "",
 };
 
-const CLASS_TEMPLATE = (fullName: string) => [`Class ${fullName} Extends %RegisteredObject`, "{", "", "}", ""];
+const CLASS_TEMPLATE = (fullName: string) => [
+  `Class ${fullName} Extends %RegisteredObject`,
+  "{",
+  "",
+  "}",
+  "",
+];
 
 function ConnectionsPanel({
   onOpenDocument,
@@ -54,12 +70,20 @@ function ConnectionsPanel({
   const [allDocuments, setAllDocuments] = useState<AtelierDocNameEntry[]>([]);
   const [filter, setFilter] = useState("");
   const [showSystemFiles, setShowSystemFiles] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: TreeNode | null } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    node: TreeNode | null;
+  } | null>(null);
   const [newClassDialogOpen, setNewClassDialogOpen] = useState(false);
   const [newClassName, setNewClassName] = useState("");
-  const [renameTarget, setRenameTarget] = useState<{ docName: string; prefix: string; ext: string; value: string } | null>(
-    null,
-  );
+  const [renameTarget, setRenameTarget] = useState<{
+    docName: string;
+    prefix: string;
+    ext: string;
+    value: string;
+  } | null>(null);
+  const [connectingTo, setConnectingTo] = useState<string | null>(null);
 
   const hasElectronAPI = typeof window.electronAPI !== "undefined";
 
@@ -70,6 +94,13 @@ function ConnectionsPanel({
       ),
     [allDocuments, filter, showSystemFiles],
   );
+
+  // Rebuilding the tree is O(documents) and every render that skips this memo (e.g. opening a
+  // context menu, typing in the new-connection form) would otherwise redo it and hand FileExplorer a
+  // brand-new `nodes` array — even though nothing about the file list changed — which in turn forces
+  // its own memoized row-flattening to redo its work too. Keyed on filteredDocuments so it only
+  // recomputes when the visible document set actually changes.
+  const documentTree = useMemo(() => buildDocumentTree(filteredDocuments), [filteredDocuments]);
 
   useEffect(() => {
     if (!hasElectronAPI) return;
@@ -133,9 +164,15 @@ function ConnectionsPanel({
       const docs = await window.electronAPI.atelier.listDocuments(id, namespace);
       setAllDocuments(docs);
       setKnownClasses(
-        docs.filter((doc) => doc.name.toLowerCase().endsWith(".cls")).map((doc) => doc.name.replace(/\.cls$/i, "")),
+        docs
+          .filter((doc) => doc.name.toLowerCase().endsWith(".cls"))
+          .map((doc) => doc.name.replace(/\.cls$/i, "")),
       );
-      onLog(docs.length ? `${docs.length} arquivo(s) encontrado(s) em ${namespace}.` : `Nenhum arquivo encontrado em ${namespace}.`);
+      onLog(
+        docs.length
+          ? `${docs.length} arquivo(s) encontrado(s) em ${namespace}.`
+          : `Nenhum arquivo encontrado em ${namespace}.`,
+      );
     } catch (error) {
       onLog(`Erro ao listar arquivos: ${(error as Error).message}`, "error");
       setAllDocuments([]);
@@ -143,20 +180,26 @@ function ConnectionsPanel({
   }
 
   async function connect(connection: ConnectionProfile) {
+    const label = connection.name || `${connection.host}:${connection.port}`;
     setActiveId(connection.id);
     setAllDocuments([]);
     setExplorerCollapsed(false);
     setConnectionsCollapsed(true);
-    onLog(`Conectando a "${connection.name || connection.host}"…`);
+    setConnectingTo(label);
+    onLog(`Conectando a "${label}"…`);
     try {
       const availableNamespaces = await window.electronAPI.atelier.listNamespaces(connection.id);
       setNamespaces(availableNamespaces);
-      const namespace = availableNamespaces.includes(connection.namespace) ? connection.namespace : availableNamespaces[0];
+      const namespace = availableNamespaces.includes(connection.namespace)
+        ? connection.namespace
+        : availableNamespaces[0];
       setActiveNamespace(namespace);
       onLog(`Conectado. Namespaces disponíveis: ${availableNamespaces.join(", ")}.`, "success");
       await loadDocuments(connection.id, namespace);
     } catch (error) {
       onLog(`Erro ao conectar: ${(error as Error).message}`, "error");
+    } finally {
+      setConnectingTo(null);
     }
   }
 
@@ -219,7 +262,8 @@ function ConnectionsPanel({
     if (!activeId || !activeNamespace || !renameTarget) return;
     const { docName: oldDocName, prefix, ext, value } = renameTarget;
     let newLeaf = value.trim();
-    if (ext && !newLeaf.toLowerCase().endsWith(`.${ext.toLowerCase()}`)) newLeaf = `${newLeaf}.${ext}`;
+    if (ext && !newLeaf.toLowerCase().endsWith(`.${ext.toLowerCase()}`))
+      newLeaf = `${newLeaf}.${ext}`;
     const newDocName = `${prefix}${newLeaf}`;
     setRenameTarget(null);
     if (newDocName === oldDocName || !newLeaf) return;
@@ -237,7 +281,11 @@ function ConnectionsPanel({
     }
     onLog(`Renomeando ${oldDocName} para ${newDocName}…`);
     try {
-      const doc = await window.electronAPI.atelier.getDocument(activeId, activeNamespace, oldDocName);
+      const doc = await window.electronAPI.atelier.getDocument(
+        activeId,
+        activeNamespace,
+        oldDocName,
+      );
       let lines = doc.content;
       if (ext.toLowerCase() === "cls") {
         const oldFullName = oldDocName.replace(/\.cls$/i, "");
@@ -245,11 +293,16 @@ function ConnectionsPanel({
         const declIndex = lines.findIndex((line) => /^\s*Class\s+/i.test(line));
         if (declIndex >= 0) {
           lines = [...lines];
-          lines[declIndex] = lines[declIndex].replace(new RegExp(escapeRegExp(oldFullName)), newFullName);
+          lines[declIndex] = lines[declIndex].replace(
+            new RegExp(escapeRegExp(oldFullName)),
+            newFullName,
+          );
         }
       }
       await window.electronAPI.atelier.saveDocument(activeId, activeNamespace, newDocName, lines);
-      const output = await window.electronAPI.atelier.compile(activeId, activeNamespace, [newDocName]);
+      const output = await window.electronAPI.atelier.compile(activeId, activeNamespace, [
+        newDocName,
+      ]);
       output.forEach((line) => onLog(line, "info"));
       await window.electronAPI.atelier.deleteDocument(activeId, activeNamespace, oldDocName);
       await loadDocuments(activeId, activeNamespace);
@@ -280,7 +333,11 @@ function ConnectionsPanel({
     if (!activeId || !activeNamespace) return;
     onLog(`Exportando ${node.docName} como XML…`);
     try {
-      const doc = await window.electronAPI.atelier.getDocument(activeId, activeNamespace, node.docName);
+      const doc = await window.electronAPI.atelier.getDocument(
+        activeId,
+        activeNamespace,
+        node.docName,
+      );
       const { xml, className } = classSourceToExportXml(doc.content);
       const savedPath = await window.electronAPI.files.saveText(`${className}.cls.xml`, xml);
       if (savedPath) onLog(`${node.docName} exportado para ${savedPath}.`, "success");
@@ -314,12 +371,17 @@ function ConnectionsPanel({
         }
       >
         {!activeId ? (
-          <p className="connection-status">Conecte-se a um servidor abaixo para navegar pelos arquivos.</p>
+          <p className="connection-status">
+            Conecte-se a um servidor abaixo para navegar pelos arquivos.
+          </p>
         ) : (
           <div className="documents-list" onContextMenu={handleContextMenu}>
             <label className="namespace-select">
               Namespace
-              <select value={activeNamespace} onChange={(event) => changeNamespace(event.target.value)}>
+              <select
+                value={activeNamespace}
+                onChange={(event) => changeNamespace(event.target.value)}
+              >
                 {namespaces.map((namespace) => (
                   <option key={namespace} value={namespace}>
                     {namespace}
@@ -341,7 +403,7 @@ function ConnectionsPanel({
               Mostrar arquivos do sistema (Ens*, CSPX, .mac, .inc)
             </label>
             <FileExplorer
-              nodes={buildDocumentTree(filteredDocuments)}
+              nodes={documentTree}
               onOpenFile={openDocument}
               onNodeContextMenu={handleNodeContextMenu}
             />
@@ -353,6 +415,7 @@ function ConnectionsPanel({
         title="Conexões"
         collapsed={connectionsCollapsed}
         onToggleCollapsed={() => setConnectionsCollapsed((value) => !value)}
+        grow={false}
         actions={
           <button type="button" onClick={newConnection} title="Nova conexão">
             +
@@ -362,10 +425,18 @@ function ConnectionsPanel({
         <ul className="connections-list">
           {connections.map((connection) => (
             <li key={connection.id} className={connection.id === activeId ? "active" : ""}>
-              <span className="connection-name" onClick={() => connect(connection)} title="Conectar e ver arquivos">
+              <span
+                className="connection-name"
+                onClick={() => connect(connection)}
+                title="Conectar e ver arquivos"
+              >
                 🖥️ {connection.name || `${connection.host}:${connection.port}`}
               </span>
-              <button type="button" onClick={() => testConnection(connection.id)} title="Testar conexão">
+              <button
+                type="button"
+                onClick={() => testConnection(connection.id)}
+                title="Testar conexão"
+              >
                 ●
               </button>
               <button type="button" onClick={() => editConnection(connection)} title="Editar">
@@ -376,7 +447,9 @@ function ConnectionsPanel({
               </button>
             </li>
           ))}
-          {connections.length === 0 && <li className="connections-empty">Nenhuma conexão ainda.</li>}
+          {connections.length === 0 && (
+            <li className="connections-empty">Nenhuma conexão ainda.</li>
+          )}
         </ul>
       </SidebarSection>
 
@@ -386,11 +459,17 @@ function ConnectionsPanel({
             <h4>{form.id ? "Editar conexão" : "Nova conexão"}</h4>
             <label>
               Nome
-              <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+              <input
+                value={form.name}
+                onChange={(event) => setForm({ ...form, name: event.target.value })}
+              />
             </label>
             <label>
               Host
-              <input value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} />
+              <input
+                value={form.host}
+                onChange={(event) => setForm({ ...form, host: event.target.value })}
+              />
             </label>
             <label>
               Porta
@@ -410,11 +489,17 @@ function ConnectionsPanel({
             </label>
             <label>
               Namespace padrão
-              <input value={form.namespace} onChange={(event) => setForm({ ...form, namespace: event.target.value })} />
+              <input
+                value={form.namespace}
+                onChange={(event) => setForm({ ...form, namespace: event.target.value })}
+              />
             </label>
             <label>
               Usuário
-              <input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} />
+              <input
+                value={form.username}
+                onChange={(event) => setForm({ ...form, username: event.target.value })}
+              />
             </label>
             <label>
               Senha
@@ -439,11 +524,15 @@ function ConnectionsPanel({
 
       {contextMenu && (
         <ul className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-          {contextMenu.node === null && <li onClick={() => openNewClassDialog()}>🧩 Nova Classe…</li>}
+          {contextMenu.node === null && (
+            <li onClick={() => openNewClassDialog()}>🧩 Nova Classe…</li>
+          )}
           {contextMenu.node?.type === "folder" &&
             (() => {
               const folder = contextMenu.node as TreeFolder;
-              return <li onClick={() => openNewClassDialog(`${folder.path}.`)}>🧩 Nova Classe aqui…</li>;
+              return (
+                <li onClick={() => openNewClassDialog(`${folder.path}.`)}>🧩 Nova Classe aqui…</li>
+              );
             })()}
           {contextMenu.node?.type === "file" &&
             (() => {
@@ -458,7 +547,8 @@ function ConnectionsPanel({
                     <li
                       onClick={() => {
                         setContextMenu(null);
-                        if (activeId && activeNamespace) onOpenApiTester(activeId, activeNamespace, file.docName);
+                        if (activeId && activeNamespace)
+                          onOpenApiTester(activeId, activeNamespace, file.docName);
                       }}
                     >
                       🔌 Testar Rotas da API…
@@ -513,6 +603,13 @@ function ConnectionsPanel({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {connectingTo && (
+        <div className="connecting-overlay">
+          <div className="connecting-spinner" />
+          <div className="connecting-message">Conectando ao servidor {connectingTo}…</div>
         </div>
       )}
     </div>

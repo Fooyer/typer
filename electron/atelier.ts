@@ -70,12 +70,23 @@ export function clearSession(config: AtelierConnectionConfig): void {
   cookieJar.delete(cookieKey(config));
 }
 
-function buildUrl(config: AtelierConnectionConfig, path: string, params?: Record<string, string | number | boolean | undefined>) {
-  const prefix = config.pathPrefix ? (config.pathPrefix.startsWith("/") ? config.pathPrefix : `/${config.pathPrefix}`) : "";
+function buildUrl(
+  config: AtelierConnectionConfig,
+  path: string,
+  params?: Record<string, string | number | boolean | undefined>,
+) {
+  const prefix = config.pathPrefix
+    ? config.pathPrefix.startsWith("/")
+      ? config.pathPrefix
+      : `/${config.pathPrefix}`
+    : "";
   const query = params
     ? Object.entries(params)
         .filter(([, value]) => value !== undefined && value !== "")
-        .map(([key, value]) => `${key}=${encodeURIComponent(typeof value === "boolean" ? (value ? "1" : "0") : String(value))}`)
+        .map(
+          ([key, value]) =>
+            `${key}=${encodeURIComponent(typeof value === "boolean" ? (value ? "1" : "0") : String(value))}`,
+        )
     : [];
   const queryString = query.length ? `?${query.join("&")}` : "";
   return `${config.https ? "https" : "http"}://${config.host}:${config.port}${prefix}/api/atelier/${path}${queryString}`;
@@ -124,7 +135,9 @@ async function request<T>(
     throw new AtelierError("Autenticação falhou: usuário ou senha incorretos.");
   }
   if (response.status === 404) {
-    throw new AtelierError("Servidor não encontrado (404): verifique host, porta e prefixo de caminho.");
+    throw new AtelierError(
+      "Servidor não encontrado (404): verifique host, porta e prefixo de caminho.",
+    );
   }
   if (!response.ok && response.status !== 400 && response.status !== 500) {
     throw new AtelierError(`Erro HTTP ${response.status}: ${response.statusText}`);
@@ -134,7 +147,9 @@ async function request<T>(
   try {
     data = (await response.json()) as AtelierResponse<T>;
   } catch {
-    throw new AtelierError("Resposta do servidor não é um JSON válido — confirme se é um servidor IRIS/Caché com a API Atelier habilitada.");
+    throw new AtelierError(
+      "Resposta do servidor não é um JSON válido — confirme se é um servidor IRIS/Caché com a API Atelier habilitada.",
+    );
   }
   if (data.status?.summary) {
     throw new AtelierError(data.status.summary);
@@ -175,8 +190,16 @@ export async function listDocuments(
   return (response.result.content ?? []).map((entry) => ({ name: entry.Name, cat: entry.Type }));
 }
 
-export async function getDocument(config: AtelierConnectionConfig, namespace: string, name: string): Promise<AtelierDocument> {
-  const response = await request<AtelierDocument>(config, "GET", `v1/${namespace}/doc/${encodeURIComponent(name)}`);
+export async function getDocument(
+  config: AtelierConnectionConfig,
+  namespace: string,
+  name: string,
+): Promise<AtelierDocument> {
+  const response = await request<AtelierDocument>(
+    config,
+    "GET",
+    `v1/${namespace}/doc/${encodeURIComponent(name)}`,
+  );
   return response.result;
 }
 
@@ -195,7 +218,11 @@ export async function saveDocument(
   });
 }
 
-export async function deleteDocument(config: AtelierConnectionConfig, namespace: string, name: string): Promise<void> {
+export async function deleteDocument(
+  config: AtelierConnectionConfig,
+  namespace: string,
+  name: string,
+): Promise<void> {
   await request(config, "DELETE", `v1/${namespace}/doc/${encodeURIComponent(name)}`);
 }
 
@@ -229,7 +256,11 @@ export async function callRestRoute(
   const started = Date.now();
   let response: Response;
   try {
-    response = await fetch(url, { method: upperMethod, headers: finalHeaders, body: hasBody ? body : undefined });
+    response = await fetch(url, {
+      method: upperMethod,
+      headers: finalHeaders,
+      body: hasBody ? body : undefined,
+    });
   } catch (error) {
     const code = (error as { cause?: { code?: string } })?.cause?.code;
     const reason =
@@ -250,10 +281,20 @@ export async function callRestRoute(
   });
   const responseBody = await response.text();
 
-  return { status: response.status, statusText: response.statusText, headers: responseHeaders, body: responseBody, durationMs };
+  return {
+    status: response.status,
+    statusText: response.statusText,
+    headers: responseHeaders,
+    body: responseBody,
+    durationMs,
+  };
 }
 
-export async function compileDocuments(config: AtelierConnectionConfig, namespace: string, docs: string[]): Promise<string[]> {
+export async function compileDocuments(
+  config: AtelierConnectionConfig,
+  namespace: string,
+  docs: string[],
+): Promise<string[]> {
   const response = await request<string[]>(config, "POST", `v1/${namespace}/action/compile`, {
     body: docs,
     params: { flags: "cuk", source: false },
@@ -272,12 +313,75 @@ export async function runQuery(
   sql: string,
   parameters: unknown[] = [],
 ): Promise<AtelierQueryResult> {
-  const response = await request<{ content: Record<string, unknown>[] }>(config, "POST", `v1/${namespace}/action/query`, {
-    body: { query: sql, parameters },
-  });
+  const response = await request<{ content: Record<string, unknown>[] }>(
+    config,
+    "POST",
+    `v1/${namespace}/action/query`,
+    {
+      body: { query: sql, parameters },
+    },
+  );
   const rows = response.result.content ?? [];
   const columns = rows.length ? Object.keys(rows[0]) : [];
   return { columns, rows };
+}
+
+export interface AtelierSearchMatch {
+  line: number;
+  text: string;
+}
+
+export interface AtelierSearchFileResult {
+  doc: string;
+  matches: AtelierSearchMatch[];
+}
+
+/**
+ * Server-side full-text search, added in the Atelier API in v2 (IRIS 2023.1+): IRIS greps document
+ * content on the server and returns only the matches, instead of the caller downloading every
+ * document to grep client-side. Older servers don't expose the v2 route at all (request() throws on
+ * the resulting 404) — callers are expected to catch that and fall back to download-and-grep.
+ *
+ * The exact response shape wasn't verified against a live server when this was written (Documatic's
+ * page for %Api.Atelier.v2 doesn't render statically); the shape-guard below throws a distinct error
+ * if `result` doesn't look like { doc, matches: [{ line, text }] }[], so callers can tell "endpoint
+ * doesn't exist" apart from "endpoint exists but replies differently than expected" and fall back
+ * either way.
+ */
+export async function searchInFiles(
+  config: AtelierConnectionConfig,
+  namespace: string,
+  query: string,
+  documents: string,
+  includeSystem = false,
+): Promise<AtelierSearchFileResult[]> {
+  const sys = includeSystem || namespace === "%SYS";
+  const response = await request<unknown>(config, "GET", `v2/${namespace}/action/search`, {
+    params: { query, documents, regex: false, sys, max: 5000 },
+  });
+  const raw = response.result as { content?: unknown } | unknown[] | null;
+  const list = Array.isArray(raw) ? raw : Array.isArray(raw?.content) ? raw.content : null;
+  if (!list)
+    throw new AtelierError(
+      "Formato de resposta inesperado do endpoint de busca (v2/action/search).",
+    );
+  for (const entry of list) {
+    const e = entry as { doc?: unknown; matches?: unknown };
+    if (typeof e?.doc !== "string" || !Array.isArray(e.matches)) {
+      throw new AtelierError(
+        "Formato de resultado inesperado do endpoint de busca (v2/action/search).",
+      );
+    }
+    for (const m of e.matches as unknown[]) {
+      const match = m as { line?: unknown; text?: unknown };
+      if (typeof match?.line !== "number" || typeof match?.text !== "string") {
+        throw new AtelierError(
+          "Formato de ocorrência inesperado do endpoint de busca (v2/action/search).",
+        );
+      }
+    }
+  }
+  return list as AtelierSearchFileResult[];
 }
 
 /**
@@ -312,9 +416,17 @@ export interface StudioUserAction {
   errorText: string;
 }
 
-export async function isStudioExtensionEnabled(config: AtelierConnectionConfig, namespace: string): Promise<boolean> {
+export async function isStudioExtensionEnabled(
+  config: AtelierConnectionConfig,
+  namespace: string,
+): Promise<boolean> {
   try {
-    const result = await runQuery(config, namespace, "SELECT %Atelier_v1_Utils.Extension_ExtensionEnabled() AS Enabled", []);
+    const result = await runQuery(
+      config,
+      namespace,
+      "SELECT %Atelier_v1_Utils.Extension_ExtensionEnabled() AS Enabled",
+      [],
+    );
     return Boolean(result.rows[0]?.Enabled);
   } catch {
     return false;
@@ -328,11 +440,12 @@ export async function getStudioMenus(
   docName: string,
   selectedText = "",
 ): Promise<StudioMenu[]> {
-  const result = await runQuery(config, namespace, "select * from %Atelier_v1_Utils.Extension_GetMenus(?,?,?)", [
-    menuType,
-    docName,
-    selectedText,
-  ]);
+  const result = await runQuery(
+    config,
+    namespace,
+    "select * from %Atelier_v1_Utils.Extension_GetMenus(?,?,?)",
+    [menuType, docName, selectedText],
+  );
   return result.rows as unknown as StudioMenu[];
 }
 
@@ -344,12 +457,12 @@ export async function invokeStudioUserAction(
   docName: string,
   selectedText = "",
 ): Promise<StudioUserAction | null> {
-  const result = await runQuery(config, namespace, "select * from %Atelier_v1_Utils.Extension_UserAction(?, ?, ?, ?)", [
-    String(type),
-    actionId,
-    docName,
-    selectedText,
-  ]);
+  const result = await runQuery(
+    config,
+    namespace,
+    "select * from %Atelier_v1_Utils.Extension_UserAction(?, ?, ?, ?)",
+    [String(type), actionId, docName, selectedText],
+  );
   const rows = result.rows as unknown as StudioUserAction[];
   return rows.length ? rows[rows.length - 1] : null;
 }

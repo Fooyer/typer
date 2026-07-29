@@ -3,6 +3,7 @@ import type {
   AtelierDocNameEntry,
   AtelierDocument,
   AtelierQueryResult,
+  AtelierSearchFileResult,
   AtelierServerInfo,
   RestCallResult,
   StudioMenu,
@@ -19,18 +20,42 @@ export interface ElectronAPI {
   };
   connections: {
     list: () => Promise<ConnectionProfile[]>;
-    save: (profile: Omit<ConnectionProfile, "id"> & { id?: string }, password?: string) => Promise<ConnectionProfile>;
+    save: (
+      profile: Omit<ConnectionProfile, "id"> & { id?: string },
+      password?: string,
+    ) => Promise<ConnectionProfile>;
     delete: (id: string) => Promise<void>;
   };
   atelier: {
     test: (id: string) => Promise<AtelierServerInfo>;
     listNamespaces: (id: string) => Promise<string[]>;
-    listDocuments: (id: string, namespace: string, includeSystem?: boolean) => Promise<AtelierDocNameEntry[]>;
+    listDocuments: (
+      id: string,
+      namespace: string,
+      includeSystem?: boolean,
+    ) => Promise<AtelierDocNameEntry[]>;
     getDocument: (id: string, namespace: string, name: string) => Promise<AtelierDocument>;
-    saveDocument: (id: string, namespace: string, name: string, contentLines: string[]) => Promise<void>;
+    searchInFiles: (
+      id: string,
+      namespace: string,
+      query: string,
+      documents: string,
+      includeSystem?: boolean,
+    ) => Promise<AtelierSearchFileResult[]>;
+    saveDocument: (
+      id: string,
+      namespace: string,
+      name: string,
+      contentLines: string[],
+    ) => Promise<void>;
     deleteDocument: (id: string, namespace: string, name: string) => Promise<void>;
     compile: (id: string, namespace: string, docs: string[]) => Promise<string[]>;
-    query: (id: string, namespace: string, sql: string, parameters: unknown[]) => Promise<AtelierQueryResult>;
+    query: (
+      id: string,
+      namespace: string,
+      sql: string,
+      parameters: unknown[],
+    ) => Promise<AtelierQueryResult>;
     callRoute: (
       id: string,
       path: string,

@@ -9,9 +9,12 @@ export interface SearchMatch {
 interface SearchPanelProps {
   query: string;
   onQueryChange: (value: string) => void;
+  mask: string;
+  onMaskChange: (value: string) => void;
   caseSensitive: boolean;
   onCaseSensitiveChange: (value: boolean) => void;
   onSearch: () => void;
+  onCancel: () => void;
   running: boolean;
   status: string;
   results: SearchMatch[];
@@ -23,9 +26,12 @@ interface SearchPanelProps {
 function SearchPanel({
   query,
   onQueryChange,
+  mask,
+  onMaskChange,
   caseSensitive,
   onCaseSensitiveChange,
   onSearch,
+  onCancel,
   running,
   status,
   results,
@@ -59,7 +65,8 @@ function SearchPanel({
     return Array.from(byDoc.entries()).map(([docName, matches]) => ({ docName, matches }));
   }, [results]);
 
-  const allCollapsed = groups.length > 0 && groups.every((group) => collapsedDocs.has(group.docName));
+  const allCollapsed =
+    groups.length > 0 && groups.every((group) => collapsedDocs.has(group.docName));
 
   function toggleGroup(docName: string) {
     setCollapsedDocs((prev) => {
@@ -84,17 +91,41 @@ function SearchPanel({
           onKeyDown={(event) => event.key === "Enter" && onSearch()}
           placeholder="Pesquisar em todos os arquivos do namespace atual…"
         />
+        <input
+          className="search-mask-input"
+          value={mask}
+          onChange={(event) => onMaskChange(event.target.value)}
+          onKeyDown={(event) => event.key === "Enter" && onSearch()}
+          placeholder="*.cls,*.int (padrão)"
+          title="Onde pesquisar: máscaras separadas por vírgula, com * e ?. Ex.: *.cls  ou  Pkg.*.cls,*.int"
+        />
         <label className="search-case-toggle" title="Diferenciar maiúsculas de minúsculas">
-          <input type="checkbox" checked={caseSensitive} onChange={(event) => onCaseSensitiveChange(event.target.checked)} />
+          <input
+            type="checkbox"
+            checked={caseSensitive}
+            onChange={(event) => onCaseSensitiveChange(event.target.checked)}
+          />
           Aa
         </label>
-        <label className="search-case-toggle" title="Lista simples Rotina / Linha / Código, como no Studio">
-          <input type="checkbox" checked={classicMode} onChange={(event) => setClassicMode(event.target.checked)} />
+        <label
+          className="search-case-toggle"
+          title="Lista simples Rotina / Linha / Código, como no Studio"
+        >
+          <input
+            type="checkbox"
+            checked={classicMode}
+            onChange={(event) => setClassicMode(event.target.checked)}
+          />
           Modo clássico
         </label>
         {!classicMode && groups.length > 0 && (
           <button type="button" onClick={toggleAllGroups}>
             {allCollapsed ? "Expandir tudo" : "Recolher tudo"}
+          </button>
+        )}
+        {running && (
+          <button type="button" onClick={onCancel}>
+            Cancelar
           </button>
         )}
         <button type="button" onClick={onSearch} disabled={running || !query.trim()}>
@@ -114,7 +145,10 @@ function SearchPanel({
             </thead>
             <tbody>
               {results.map((match, index) => (
-                <tr key={`${match.docName}:${match.line}:${index}`} onClick={() => onOpenResult(match.docName, match.line)}>
+                <tr
+                  key={`${match.docName}:${match.line}:${index}`}
+                  onClick={() => onOpenResult(match.docName, match.line)}
+                >
                   <td className="search-classic-doc">{match.docName}</td>
                   <td className="search-classic-line">{match.line}</td>
                   <td className="search-classic-text">{match.text.trim()}</td>
@@ -130,8 +164,9 @@ function SearchPanel({
             return (
               <div key={group.docName} className="search-result-group">
                 <div className="search-result-file" onClick={() => toggleGroup(group.docName)}>
-                  <span className="search-result-chevron">{collapsed ? "▸" : "▾"}</span>
-                  📄 {group.docName} <span className="search-result-count">({group.matches.length})</span>
+                  <span className="search-result-chevron">{collapsed ? "▸" : "▾"}</span>📄{" "}
+                  {group.docName}{" "}
+                  <span className="search-result-count">({group.matches.length})</span>
                 </div>
                 {!collapsed &&
                   group.matches.map((match) => (

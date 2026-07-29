@@ -14,9 +14,12 @@ export interface LogLine {
 export interface SearchPanelState {
   query: string;
   onQueryChange: (value: string) => void;
+  mask: string;
+  onMaskChange: (value: string) => void;
   caseSensitive: boolean;
   onCaseSensitiveChange: (value: boolean) => void;
   onSearch: () => void;
+  onCancel: () => void;
   running: boolean;
   status: string;
   results: SearchMatch[];
@@ -64,7 +67,11 @@ function OutputPanel({ lines, onClear, activeTab, onActiveTabChange, search }: O
           </button>
         )}
       </div>
-      <div className="output-panel-body" style={{ display: activeTab === "log" ? "block" : "none" }} ref={scrollRef}>
+      <div
+        className="output-panel-body"
+        style={{ display: activeTab === "log" ? "block" : "none" }}
+        ref={scrollRef}
+      >
         {lines.length === 0 ? (
           <div className="output-line output-line-info">Nenhuma saída ainda.</div>
         ) : (
