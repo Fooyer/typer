@@ -5,6 +5,7 @@ import CodeEditor, { type CodeEditorHandle } from "./components/CodeEditor";
 import ConnectionsPanel from "./components/ConnectionsPanel";
 import MenuBar, { type MenuDef } from "./components/MenuBar";
 import OutputPanel, { type LogLevel, type LogLine, type OutputTab } from "./components/OutputPanel";
+import QuickOpenClassModal from "./components/QuickOpenClassModal";
 import type { SearchMatch } from "./components/SearchPanel";
 import SqlRunner from "./components/SqlRunner";
 import StudioDialogModal, { type StudioDialogRequest } from "./components/StudioDialogModal";
@@ -25,6 +26,7 @@ import { classSourceToExportXml } from "./utils/classXmlExport";
 import { downloadTextFile } from "./utils/download";
 import { loadThemePreference, saveThemePreference } from "./utils/themePreference";
 import { setClassReferenceOpener } from "./monaco/classReferenceNavigation";
+import { getKnownClasses } from "./monaco/classIndex";
 import { setClassMemberProvider, type ClassMember } from "./monaco/classMembers";
 import { setTypeParameterProvider } from "./monaco/typeParameters";
 import type { StudioMenu, StudioUserAction } from "../electron/atelier";
@@ -110,6 +112,7 @@ function App() {
   );
   const [studioMenus, setStudioMenus] = useState<StudioMenu[]>([]);
   const [studioDialog, setStudioDialog] = useState<StudioDialogRequest | null>(null);
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const [outputTab, setOutputTab] = useState<OutputTab>("log");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMask, setSearchMask] = useState("");
@@ -903,6 +906,10 @@ function App() {
         event.preventDefault();
         openFindInFiles();
       }
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "o") {
+        event.preventDefault();
+        setQuickOpenOpen(true);
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -1035,6 +1042,11 @@ function App() {
     {
       label: "Arquivo",
       items: [
+        {
+          label: "Abrir Classe…",
+          shortcut: "Ctrl+O",
+          onSelect: () => setQuickOpenOpen(true),
+        },
         {
           label: "Salvar e Compilar",
           shortcut: "Ctrl+S",
@@ -1327,6 +1339,17 @@ function App() {
       )}
 
       {studioDialog && <StudioDialogModal request={studioDialog} />}
+
+      {quickOpenOpen && (
+        <QuickOpenClassModal
+          classNames={getKnownClasses()}
+          onOpen={(className) => {
+            setQuickOpenOpen(false);
+            void openClassByName(className);
+          }}
+          onClose={() => setQuickOpenOpen(false)}
+        />
+      )}
     </>
   );
 }
