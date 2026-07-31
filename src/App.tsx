@@ -1243,7 +1243,12 @@ function App() {
                 ref={codeEditorRef}
                 tabs={tabs
                   .filter((tab) => tab.kind === "code")
-                  .map((tab) => ({ id: tab.id, content: tab.content, readOnly: tab.readOnly }))}
+                  .map((tab) => ({
+                    id: tab.id,
+                    title: tab.title,
+                    content: tab.content,
+                    readOnly: tab.readOnly,
+                  }))}
                 activeTabId={activeTab?.kind === "code" ? activeTabId : null}
                 onContentChange={updateTabContent}
                 diagnostics={diagnostics}

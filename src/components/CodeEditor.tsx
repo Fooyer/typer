@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import * as monaco from "monaco-editor";
 import {
-  OBJECTSCRIPT_LANGUAGE_ID,
+  getObjectScriptLanguageId,
   registerObjectScriptLanguage,
 } from "../monaco/objectscript-language";
 import { registerObjectScriptCompletion } from "../monaco/objectscript-completion";
@@ -17,6 +17,9 @@ import type { Diagnostic } from "../utils/diagnostics";
 
 export interface EditorTab {
   id: string;
+  /** File name (with extension), used to pick which ObjectScript grammar tokenizes this tab —
+   * see getObjectScriptLanguageId. */
+  title: string;
   content: string;
   readOnly?: boolean;
 }
@@ -126,7 +129,7 @@ const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEd
       if (modelsRef.current.has(tab.id)) continue;
       const model = monaco.editor.createModel(
         tab.content,
-        OBJECTSCRIPT_LANGUAGE_ID,
+        getObjectScriptLanguageId(tab.title),
         monaco.Uri.parse(`inmemory://tab/${tab.id}`),
       );
       modelsRef.current.set(tab.id, model);
@@ -141,6 +144,20 @@ const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEd
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, tabIdsKey]);
+
+  // Re-picks each model's grammar when a tab is renamed to a different extension (e.g. Studio's
+  // "Save As" flow) — the effect above only creates models for newly-opened tabs.
+  const tabTitlesKey = tabs.map((tab) => `${tab.id}:${tab.title}`).join(",");
+  useEffect(() => {
+    if (!ready) return;
+    for (const tab of tabs) {
+      const model = modelsRef.current.get(tab.id);
+      if (!model) continue;
+      const languageId = getObjectScriptLanguageId(tab.title);
+      if (model.getLanguageId() !== languageId) monaco.editor.setModelLanguage(model, languageId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, tabTitlesKey]);
 
   useEffect(() => {
     if (!ready || !activeTabId || !editorRef.current) return;

@@ -1,5 +1,5 @@
 import type * as Monaco from "monaco-editor";
-import { CLASS_KEYWORDS, COMMANDS, OBJECTSCRIPT_LANGUAGE_ID } from "./objectscript-language";
+import { CLASS_KEYWORDS, COMMANDS, OBJECTSCRIPT_LANGUAGE_IDS } from "./objectscript-language";
 import { getKnownClasses } from "./classIndex";
 import { getClassMembers, type ClassMember } from "./classMembers";
 import {
@@ -544,7 +544,7 @@ export function registerObjectScriptCompletion(monaco: typeof Monaco): void {
   if (registered) return;
   registered = true;
 
-  monaco.languages.registerCompletionItemProvider(OBJECTSCRIPT_LANGUAGE_ID, {
+  monaco.languages.registerCompletionItemProvider(OBJECTSCRIPT_LANGUAGE_IDS, {
     triggerCharacters: ["$", "#", "."],
     async provideCompletionItems(model, position) {
       const textUntilPosition = model.getValueInRange({

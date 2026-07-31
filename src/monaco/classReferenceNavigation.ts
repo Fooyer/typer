@@ -1,5 +1,5 @@
 import type * as Monaco from "monaco-editor";
-import { OBJECTSCRIPT_LANGUAGE_ID } from "./objectscript-language";
+import { OBJECTSCRIPT_LANGUAGE_IDS } from "./objectscript-language";
 
 const CLASS_REFERENCE_SCHEME = "objectscript-class";
 
@@ -18,7 +18,10 @@ export function goToClassReference(className: string): void {
 /** Finds the class-name-like token under the cursor. Since ObjectScript class names are dotted
  * (`Teste.Router`) or `%`-prefixed system names (`%Status`), Monaco's own word boundaries would
  * split on the dot, so this scans the line with a wider pattern instead of using getWordAtPosition. */
-export function extractClassNameAt(model: Monaco.editor.ITextModel, position: Monaco.Position): string | null {
+export function extractClassNameAt(
+  model: Monaco.editor.ITextModel,
+  position: Monaco.Position,
+): string | null {
   const line = model.getLineContent(position.lineNumber);
   const pattern = /%?\w+(?:\.\w+)*/g;
   const column = position.column - 1;
@@ -42,13 +45,15 @@ export function registerObjectScriptDefinition(monaco: typeof Monaco): void {
   if (registered) return;
   registered = true;
 
-  monaco.languages.registerDefinitionProvider(OBJECTSCRIPT_LANGUAGE_ID, {
+  monaco.languages.registerDefinitionProvider(OBJECTSCRIPT_LANGUAGE_IDS, {
     provideDefinition(model, position) {
       const className = extractClassNameAt(model, position);
       if (!className) return null;
       return [
         {
-          uri: monaco.Uri.parse(`${CLASS_REFERENCE_SCHEME}:///${encodeURIComponent(className)}.cls`),
+          uri: monaco.Uri.parse(
+            `${CLASS_REFERENCE_SCHEME}:///${encodeURIComponent(className)}.cls`,
+          ),
           range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 },
         },
       ];

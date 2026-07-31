@@ -57,7 +57,11 @@ export function findMatchingParen(line: string, openIndex: number): number {
 }
 
 /** Scans forward from `fromLine`/`fromCol` for the first `{`, returning its position (depth becomes 1 there). */
-export function findBodyStart(lines: string[], fromLine: number, fromCol: number): { line: number; col: number } | null {
+export function findBodyStart(
+  lines: string[],
+  fromLine: number,
+  fromCol: number,
+): { line: number; col: number } | null {
   for (let line = fromLine; line < lines.length; line++) {
     const text = line === fromLine ? lines[line].slice(fromCol) : lines[line];
     const offset = line === fromLine ? fromCol : 0;
@@ -68,7 +72,11 @@ export function findBodyStart(lines: string[], fromLine: number, fromCol: number
 }
 
 /** Scans forward from the body start for the matching `}` at depth 0, tracking nested `{ }`. */
-export function findBodyEnd(lines: string[], fromLine: number, fromCol: number): { line: number; col: number } | null {
+export function findBodyEnd(
+  lines: string[],
+  fromLine: number,
+  fromCol: number,
+): { line: number; col: number } | null {
   let depth = 1;
   for (let line = fromLine; line < lines.length; line++) {
     const text = line === fromLine ? lines[line].slice(fromCol) : lines[line];
@@ -84,7 +92,9 @@ export function findBodyEnd(lines: string[], fromLine: number, fromCol: number):
   return null;
 }
 
-export function computeParameterUsageDecorations(model: Monaco.editor.ITextModel): Monaco.editor.IModelDeltaDecoration[] {
+export function computeParameterUsageDecorations(
+  model: Monaco.editor.ITextModel,
+): Monaco.editor.IModelDeltaDecoration[] {
   const lines = model.getLinesContent();
   const decorations: Monaco.editor.IModelDeltaDecoration[] = [];
 
@@ -104,7 +114,14 @@ export function computeParameterUsageDecorations(model: Monaco.editor.ITextModel
     const bodyEnd = findBodyEnd(lines, bodyStart.line, bodyStart.col);
     if (!bodyEnd) continue;
 
-    const wordPattern = new RegExp(`\\b(?:${paramNames.map(escapeRegExp).join("|")})\\b`, "g");
+    // `_` is ObjectScript's string-concatenation operator, not an identifier character, but JS
+    // regex treats it as a \w char, so `\b` fails to break at `_name_`. Use explicit
+    // letter/digit lookarounds instead so concatenation-adjacent usages still get highlighted.
+    const idChar = "\\p{L}\\p{N}";
+    const wordPattern = new RegExp(
+      `(?<![${idChar}])(?:${paramNames.map(escapeRegExp).join("|")})(?![${idChar}])`,
+      "gu",
+    );
     for (let line2 = bodyStart.line; line2 <= bodyEnd.line; line2++) {
       const text = lines[line2];
       const from = line2 === bodyStart.line ? bodyStart.col : 0;

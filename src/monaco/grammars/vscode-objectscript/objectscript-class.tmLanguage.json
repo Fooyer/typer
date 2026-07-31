@@ -259,31 +259,31 @@
         },
         {
           "begin": "(?i)^(\\bRelationship\\b)(\\s+)((?:%?[\\p{Alpha}][\\p{Alnum}]*(?:_[\\p{Alnum}]+)*)|(?:\"[^\".]+\"))",
-            "beginCaptures": {
-              "1": {
-                "name": "keyword.objectscript_class"
-              },
-              "2": {
-                "name": "whitespace.objectscript_class"
-              },
-              "3": {
-                "name": "entity.other.attribute-name.objectscript_class"
-              }
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.objectscript_class"
             },
-            "patterns": [
-              {
-                "include": "#relationship"
-              }
-            ],
-            "end": "(;)",
-            "endCaptures": {
-              "1": {
-                "name": "punctuation.objectscript_class"
-              }
+            "2": {
+              "name": "whitespace.objectscript_class"
+            },
+            "3": {
+              "name": "entity.other.attribute-name.objectscript_class"
             }
+          },
+          "patterns": [
+            {
+              "include": "#relationship"
+            }
+          ],
+          "end": "(;)",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.objectscript_class"
+            }
+          }
         },
         {
-          "begin": "(?i)^(\\bClient(?:Class)?Method\\b)(\\s+)((?:%|%?[\\p{Alpha}][\\p{Alnum}]*(?:_[\\p{Alnum}]+)*)|(?:\"[^\".]+\"))",
+          "begin": "(?i)^(\\bClient(?:Class)?Method\\b)(\\s+)(%?[\\p{Alpha}][\\p{Alnum}]*(?:_[\\p{Alnum}]+)*|(?:\"[^\".]+\"))",
           "beginCaptures": {
             "1": {
               "name": "keyword.objectscript_class"
@@ -308,7 +308,7 @@
           }
         },
         {
-          "begin": "(?i)^(\\b(?:Class)?Method\\b)(\\s+)((?:%|%?[\\p{Alpha}][\\p{Alnum}]*(?:_[\\p{Alnum}]+)*)|(?:\"[^\".]+\"))",
+          "begin": "(?i)^(\\b(?:Class)?Method\\b)(\\s+)(%?[\\p{Alpha}][\\p{Alnum}]*(?:_[\\p{Alnum}]+)*|(?:\"[^\".]+\"))",
           "beginCaptures": {
             "1": {
               "name": "keyword.objectscript_class"
