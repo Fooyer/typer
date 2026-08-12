@@ -152,7 +152,8 @@ function extractTrailingBracket(text: string): { before: string; content: string
     if (ch === "]") depth++;
     else if (ch === "[") {
       depth--;
-      if (depth === 0) return { before: trimmed.slice(0, i), content: trimmed.slice(i + 1, trimmed.length - 1) };
+      if (depth === 0)
+        return { before: trimmed.slice(0, i), content: trimmed.slice(i + 1, trimmed.length - 1) };
     }
   }
   return null;
@@ -224,7 +225,7 @@ function parseMembers(body: string): ParsedMember[] {
       continue;
     }
 
-    if (/^\/\/\//.test(rawLine)) {
+    if (rawLine.startsWith("///")) {
       pendingDescLines.push(rawLine.replace(/^\/\/\/\s?/, ""));
       i = lineEnd + 1;
       continue;
@@ -293,7 +294,10 @@ function parseMembers(body: string): ParsedMember[] {
     if (bodyOpen !== -1) {
       header = body.slice(memberStart, bodyOpen);
       const closeIndex = findMatchingBrace(body, bodyOpen, honorComments);
-      bodyText = body.slice(bodyOpen + 1, closeIndex).replace(/^\n/, "").replace(/\n[ \t]*$/, "");
+      bodyText = body
+        .slice(bodyOpen + 1, closeIndex)
+        .replace(/^\n/, "")
+        .replace(/\n[ \t]*$/, "");
       afterIndex = closeIndex + 1;
     } else if (headerEnd !== -1) {
       header = body.slice(memberStart, headerEnd);
@@ -303,7 +307,13 @@ function parseMembers(body: string): ParsedMember[] {
       afterIndex = n;
     }
 
-    members.push({ kind, name, header: header.trim(), body: bodyText, description: pendingDescLines.join("\n") });
+    members.push({
+      kind,
+      name,
+      header: header.trim(),
+      body: bodyText,
+      description: pendingDescLines.join("\n"),
+    });
     pendingDescLines = [];
     i = afterIndex;
   }
@@ -321,7 +331,7 @@ function parseClass(sourceLines: string[]): ParsedClass {
   const descLines: string[] = [];
   for (let i = declIndex - 1; i >= 0; i--) {
     const line = lines[i];
-    if (/^\/\/\//.test(line)) descLines.unshift(line.replace(/^\/\/\/\s?/, ""));
+    if (line.startsWith("///")) descLines.unshift(line.replace(/^\/\/\/\s?/, ""));
     else break;
   }
 
@@ -370,12 +380,19 @@ function parseClass(sourceLines: string[]): ParsedClass {
     superClasses = splitTopLevelByComma(sup);
   }
 
-  return { className, description: descLines.join("\n"), superClasses, classKeywords, members: parseMembers(bodyText) };
+  return {
+    className,
+    description: descLines.join("\n"),
+    superClasses,
+    classKeywords,
+    members: parseMembers(bodyText),
+  };
 }
 
 function emitMember(member: ParsedMember): string {
   const parts: string[] = [`<${member.kind} name="${escapeXmlAttr(member.name)}">`];
-  if (member.description) parts.push(`<Description>\n${escapeXmlText(member.description)}</Description>`);
+  if (member.description)
+    parts.push(`<Description>\n${escapeXmlText(member.description)}</Description>`);
 
   let header = member.header;
   const kwBlock = extractTrailingBracket(header);
@@ -392,7 +409,8 @@ function emitMember(member: ParsedMember): string {
         rest = rest.slice(asMatch[0].length).trim();
       }
       if (type) parts.push(`<Type>${escapeXmlText(type)}</Type>`);
-      if (rest.startsWith("=")) parts.push(`<Default>${escapeXmlText(rest.slice(1).trim())}</Default>`);
+      if (rest.startsWith("="))
+        parts.push(`<Default>${escapeXmlText(rest.slice(1).trim())}</Default>`);
       break;
     }
     case "Property":
@@ -429,7 +447,8 @@ function emitMember(member: ParsedMember): string {
       if (props) parts.push(`<Properties>${escapeXmlText(props)}</Properties>`);
       if (refMatch) {
         parts.push(`<ReferencedClass>${escapeXmlText(refMatch[1])}</ReferencedClass>`);
-        if (refMatch[2]) parts.push(`<ReferencedKey>${escapeXmlText(refMatch[2].trim())}</ReferencedKey>`);
+        if (refMatch[2])
+          parts.push(`<ReferencedKey>${escapeXmlText(refMatch[2].trim())}</ReferencedKey>`);
       }
       break;
     }
@@ -451,13 +470,15 @@ function emitMember(member: ParsedMember): string {
       const returnTag = member.kind === "Query" ? "Type" : "ReturnType";
       if (returnType) parts.push(`<${returnTag}>${escapeXmlText(returnType)}</${returnTag}>`);
       if (member.body !== null) {
-        const tag = member.kind === "Query" && /sqlquery/i.test(returnType) ? "SqlQuery" : "Implementation";
+        const tag =
+          member.kind === "Query" && /sqlquery/i.test(returnType) ? "SqlQuery" : "Implementation";
         parts.push(`<${tag}>${cdata(`\n${member.body}\n`)}</${tag}>`);
       }
       break;
     }
     case "Trigger": {
-      if (member.body !== null) parts.push(`<Implementation>${cdata(`\n${member.body}\n`)}</Implementation>`);
+      if (member.body !== null)
+        parts.push(`<Implementation>${cdata(`\n${member.body}\n`)}</Implementation>`);
       break;
     }
     case "XData": {
@@ -489,19 +510,41 @@ export function findClassMember(
 ): { className: string; header: string; body: string | null } | null {
   const parsed = parseClass(sourceLines);
   const match = parsed.members.find(
-    (m) => m.kind.toLowerCase() === kind.toLowerCase() && m.name.toLowerCase() === name.toLowerCase(),
+    (m) =>
+      m.kind.toLowerCase() === kind.toLowerCase() && m.name.toLowerCase() === name.toLowerCase(),
   );
   if (!match) return null;
   return { className: parsed.className, header: match.header, body: match.body };
 }
 
+/** Merges several single-class export XML documents (as produced by `classSourceToExportXml`) into
+ * one `<Export>` document with multiple `<Class>` children, matching how Studio exports a
+ * multi-selection to a single file. */
+export function combineExportXml(classXmls: string[]): string {
+  const bodies = classXmls
+    .map((xml) => xml.match(/<Export[^>]*>([\s\S]*)<\/Export>/)?.[1]?.trim())
+    .filter((body): body is string => Boolean(body));
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<Export generator="Cache" version="25">',
+    ...bodies,
+    "</Export>",
+  ].join("\n");
+}
+
 export function classSourceToExportXml(sourceLines: string[]): { xml: string; className: string } {
   const parsed = parseClass(sourceLines);
-  const lines: string[] = ['<?xml version="1.0" encoding="UTF-8"?>', `<Export generator="Cache" version="25">`];
+  const lines: string[] = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    `<Export generator="Cache" version="25">`,
+  ];
   lines.push(`<Class name="${escapeXmlAttr(parsed.className)}">`);
-  if (parsed.description) lines.push(`<Description>\n${escapeXmlText(parsed.description)}</Description>`);
-  if (parsed.superClasses.length) lines.push(`<Super>${escapeXmlText(parsed.superClasses.join(","))}</Super>`);
-  for (const [key, value] of parsed.classKeywords) lines.push(`<${key}>${escapeXmlText(value)}</${key}>`);
+  if (parsed.description)
+    lines.push(`<Description>\n${escapeXmlText(parsed.description)}</Description>`);
+  if (parsed.superClasses.length)
+    lines.push(`<Super>${escapeXmlText(parsed.superClasses.join(","))}</Super>`);
+  for (const [key, value] of parsed.classKeywords)
+    lines.push(`<${key}>${escapeXmlText(value)}</${key}>`);
   lines.push("");
   for (const member of parsed.members) {
     lines.push(emitMember(member));

@@ -39,7 +39,10 @@ export function listConnections(): ConnectionProfile[] {
   return readJson(connectionsFile(), []);
 }
 
-export function saveConnection(profile: Omit<ConnectionProfile, "id"> & { id?: string }, password?: string): ConnectionProfile {
+export function saveConnection(
+  profile: Omit<ConnectionProfile, "id"> & { id?: string },
+  password?: string,
+): ConnectionProfile {
   const connections = listConnections();
   const id = profile.id ?? crypto.randomUUID();
   const saved: ConnectionProfile = { ...profile, id };

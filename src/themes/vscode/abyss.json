@@ -7,11 +7,7 @@
       }
     },
     {
-      "scope": [
-        "meta.embedded",
-        "source.groovy.embedded",
-        "string meta.image.inline.markdown"
-      ],
+      "scope": ["meta.embedded", "source.groovy.embedded", "string meta.image.inline.markdown"],
       "settings": {
         "foreground": "#6688cc"
       }
@@ -46,10 +42,7 @@
     },
     {
       "name": "User-defined constant",
-      "scope": [
-        "constant.character",
-        "constant.other"
-      ],
+      "scope": ["constant.character", "constant.other"],
       "settings": {
         "foreground": "#f280d0"
       }
@@ -155,10 +148,7 @@
     },
     {
       "name": "Library class/type",
-      "scope": [
-        "support.type",
-        "support.class"
-      ],
+      "scope": ["support.type", "support.class"],
       "settings": {
         "fontStyle": "italic",
         "foreground": "#9966b8"
@@ -188,10 +178,7 @@
     },
     {
       "name": "diff: header",
-      "scope": [
-        "meta.diff",
-        "meta.diff.header"
-      ],
+      "scope": ["meta.diff", "meta.diff.header"],
       "settings": {
         "fontStyle": "italic",
         "foreground": "#E0EDDD"
@@ -229,10 +216,7 @@
     },
     {
       "name": "Markup Styling",
-      "scope": [
-        "markup.bold",
-        "markup.italic"
-      ],
+      "scope": ["markup.bold", "markup.italic"],
       "settings": {
         "foreground": "#22aa44"
       }
@@ -267,10 +251,7 @@
     },
     {
       "name": "Markup Headings",
-      "scope": [
-        "markup.heading",
-        "markup.heading.setext"
-      ],
+      "scope": ["markup.heading", "markup.heading.setext"],
       "settings": {
         "fontStyle": "bold",
         "foreground": "#6688cc"

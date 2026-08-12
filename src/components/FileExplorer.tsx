@@ -4,7 +4,8 @@ import type { TreeNode } from "../utils/documentTree";
 interface FileExplorerProps {
   nodes: TreeNode[];
   onOpenFile: (docName: string) => void;
-  onNodeContextMenu?: (node: TreeNode, x: number, y: number) => void;
+  /** `selectedNodes` includes every node currently multi-selected (may just be `[node]`). */
+  onNodeContextMenu?: (node: TreeNode, x: number, y: number, selectedNodes: TreeNode[]) => void;
 }
 
 const FILE_ICONS: Record<string, string> = {
@@ -56,6 +57,8 @@ function flattenVisible(nodes: TreeNode[], expanded: Set<string>, depth: number,
 
 function FileExplorer({ nodes, onOpenFile, onNodeContextMenu }: FileExplorerProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const lastIndexRef = useRef<number | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -88,6 +91,50 @@ function FileExplorer({ nodes, onOpenFile, onNodeContextMenu }: FileExplorerProp
     });
   }, []);
 
+  // Ctrl/Cmd+click toggles one row in/out of the selection; Shift+click selects the visible range
+  // since the last clicked row; a plain click collapses the selection to just that row and keeps
+  // the old open-file/toggle-folder behavior — the same conventions as VS Code's explorer.
+  const handleRowClick = useCallback(
+    (event: React.MouseEvent, row: Row, index: number) => {
+      if (event.ctrlKey || event.metaKey) {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          if (next.has(row.key)) next.delete(row.key);
+          else next.add(row.key);
+          return next;
+        });
+        lastIndexRef.current = index;
+        return;
+      }
+      if (event.shiftKey && lastIndexRef.current !== null) {
+        const [from, to] = [lastIndexRef.current, index].sort((a, b) => a - b);
+        setSelected(new Set(rows.slice(from, to + 1).map((r) => r.key)));
+        return;
+      }
+      setSelected(new Set([row.key]));
+      lastIndexRef.current = index;
+      if (row.node.type === "file") onOpenFile(row.node.docName);
+      else toggleFolder(row.node.path);
+    },
+    [rows, onOpenFile, toggleFolder],
+  );
+
+  const handleRowContextMenu = useCallback(
+    (event: React.MouseEvent, row: Row) => {
+      if (!onNodeContextMenu) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (selected.has(row.key) && selected.size > 1) {
+        const selectedNodes = rows.filter((r) => selected.has(r.key)).map((r) => r.node);
+        onNodeContextMenu(row.node, event.clientX, event.clientY, selectedNodes);
+      } else {
+        setSelected(new Set([row.key]));
+        onNodeContextMenu(row.node, event.clientX, event.clientY, [row.node]);
+      }
+    },
+    [onNodeContextMenu, rows, selected],
+  );
+
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const endIndex = Math.min(
     rows.length,
@@ -102,11 +149,12 @@ function FileExplorer({ nodes, onOpenFile, onNodeContextMenu }: FileExplorerProp
           <FileTreeRow
             key={row.key}
             row={row}
+            index={startIndex + i}
             top={(startIndex + i) * ROW_HEIGHT}
             expanded={row.node.type === "folder" && expanded.has(row.node.path)}
-            onToggleFolder={toggleFolder}
-            onOpenFile={onOpenFile}
-            onNodeContextMenu={onNodeContextMenu}
+            selected={selected.has(row.key)}
+            onRowClick={handleRowClick}
+            onRowContextMenu={handleRowContextMenu}
           />
         ))}
       </div>
@@ -116,36 +164,34 @@ function FileExplorer({ nodes, onOpenFile, onNodeContextMenu }: FileExplorerProp
 
 const FileTreeRow = memo(function FileTreeRow({
   row,
+  index,
   top,
   expanded,
-  onToggleFolder,
-  onOpenFile,
-  onNodeContextMenu,
+  selected,
+  onRowClick,
+  onRowContextMenu,
 }: {
   row: Row;
+  index: number;
   top: number;
   expanded: boolean;
-  onToggleFolder: (path: string) => void;
-  onOpenFile: (docName: string) => void;
-  onNodeContextMenu?: (node: TreeNode, x: number, y: number) => void;
+  selected: boolean;
+  onRowClick: (event: React.MouseEvent, row: Row, index: number) => void;
+  onRowContextMenu: (event: React.MouseEvent, row: Row) => void;
 }) {
   const { node, depth } = row;
   const style = { top, height: ROW_HEIGHT, paddingLeft: depth * INDENT_PX + 4 };
-
-  function handleContextMenu(event: React.MouseEvent) {
-    if (!onNodeContextMenu) return;
-    event.preventDefault();
-    event.stopPropagation();
-    onNodeContextMenu(node, event.clientX, event.clientY);
-  }
+  const className =
+    `file-tree-row ${node.type === "file" ? "file-tree-file" : "file-tree-folder-label"}` +
+    (selected ? " selected" : "");
 
   if (node.type === "file") {
     return (
       <div
-        className="file-tree-row file-tree-file"
+        className={className}
         style={style}
-        onClick={() => onOpenFile(node.docName)}
-        onContextMenu={handleContextMenu}
+        onClick={(event) => onRowClick(event, row, index)}
+        onContextMenu={(event) => onRowContextMenu(event, row)}
         title={node.docName}
       >
         <span className="file-tree-icon">{fileIcon(node.name)}</span>
@@ -156,10 +202,10 @@ const FileTreeRow = memo(function FileTreeRow({
 
   return (
     <div
-      className="file-tree-row file-tree-folder-label"
+      className={className}
       style={style}
-      onClick={() => onToggleFolder(node.path)}
-      onContextMenu={handleContextMenu}
+      onClick={(event) => onRowClick(event, row, index)}
+      onContextMenu={(event) => onRowContextMenu(event, row)}
     >
       <span className="file-tree-icon">{expanded ? "📂" : "📁"}</span>
       {node.name}

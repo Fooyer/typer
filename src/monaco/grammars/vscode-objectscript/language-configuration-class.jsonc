@@ -1,21 +1,35 @@
 {
   "comments": {
     "lineComment": "//",
-    "blockComment": ["/*", "*/"]
+    "blockComment": ["/*", "*/"],
   },
-  "brackets": [["{", "}"], ["(", ")"], ["[", "]"]],
+  "brackets": [
+    ["{", "}"],
+    ["(", ")"],
+    ["[", "]"],
+  ],
   // symbols that are auto closed when typing
-  "autoClosingPairs": [["{", "}"], ["(", ")"], ["[", "]"], ["\"", "\""]],
+  "autoClosingPairs": [
+    ["{", "}"],
+    ["(", ")"],
+    ["[", "]"],
+    ["\"", "\""],
+  ],
   // symbols that that can be used to surround a selection
-  "surroundingPairs": [["{", "}"], ["(", ")"], ["\"", "\""], ["[", "]"]],
+  "surroundingPairs": [
+    ["{", "}"],
+    ["(", ")"],
+    ["\"", "\""],
+    ["[", "]"],
+  ],
   "indentationRules": {
     "increaseIndentPattern": "^((Class|Client)?Method|Query|XData|Storage|Trigger)",
-    "decreaseIndentPattern": "^}"
+    "decreaseIndentPattern": "^}",
   },
   "folding": {
     "markers": {
       "start": "^((Class|Client)?Method|Query|XData|Storage|Trigger)",
-      "end": "^}"
-    }
-  }
+      "end": "^}",
+    },
+  },
 }

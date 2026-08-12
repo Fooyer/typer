@@ -1,6 +1,7 @@
 allowBuilds:
   electron-winstaller: true
   esbuild: true
+  opencode-ai: true
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@0.2.5
   vite-plus: 0.2.5

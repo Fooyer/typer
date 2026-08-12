@@ -57,7 +57,11 @@ export function findMatchingParen(line: string, openIndex: number): number {
 }
 
 /** Scans forward from `fromLine`/`fromCol` for the first `{`, returning its position (depth becomes 1 there). */
-export function findBodyStart(lines: string[], fromLine: number, fromCol: number): { line: number; col: number } | null {
+export function findBodyStart(
+  lines: string[],
+  fromLine: number,
+  fromCol: number,
+): { line: number; col: number } | null {
   for (let line = fromLine; line < lines.length; line++) {
     const text = line === fromLine ? lines[line].slice(fromCol) : lines[line];
     const offset = line === fromLine ? fromCol : 0;
@@ -68,7 +72,11 @@ export function findBodyStart(lines: string[], fromLine: number, fromCol: number
 }
 
 /** Scans forward from the body start for the matching `}` at depth 0, tracking nested `{ }`. */
-export function findBodyEnd(lines: string[], fromLine: number, fromCol: number): { line: number; col: number } | null {
+export function findBodyEnd(
+  lines: string[],
+  fromLine: number,
+  fromCol: number,
+): { line: number; col: number } | null {
   let depth = 1;
   for (let line = fromLine; line < lines.length; line++) {
     const text = line === fromLine ? lines[line].slice(fromCol) : lines[line];
@@ -84,7 +92,9 @@ export function findBodyEnd(lines: string[], fromLine: number, fromCol: number):
   return null;
 }
 
-export function computeParameterUsageDecorations(model: Monaco.editor.ITextModel): Monaco.editor.IModelDeltaDecoration[] {
+export function computeParameterUsageDecorations(
+  model: Monaco.editor.ITextModel,
+): Monaco.editor.IModelDeltaDecoration[] {
   const lines = model.getLinesContent();
   const decorations: Monaco.editor.IModelDeltaDecoration[] = [];
 

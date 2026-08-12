@@ -60,10 +60,17 @@ export function vscodeThemeToMonaco(
   }
 
   for (const [unstyledScope, inheritFromScope] of SCOPE_FALLBACKS) {
-    const alreadyStyled = rules.some((rule) => rule.token === unstyledScope || unstyledScope.startsWith(rule.token));
+    const alreadyStyled = rules.some(
+      (rule) => rule.token === unstyledScope || unstyledScope.startsWith(rule.token),
+    );
     if (alreadyStyled) continue;
     const sourceRule = rules.find((rule) => rule.token === inheritFromScope);
-    if (sourceRule) rules.push({ token: unstyledScope, foreground: sourceRule.foreground, fontStyle: sourceRule.fontStyle });
+    if (sourceRule)
+      rules.push({
+        token: unstyledScope,
+        foreground: sourceRule.foreground,
+        fontStyle: sourceRule.fontStyle,
+      });
   }
 
   return {

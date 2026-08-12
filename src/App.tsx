@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as monaco from "monaco-editor";
+import AgentPanel from "./components/AgentPanel";
 import ApiTester from "./components/ApiTester";
 import CodeEditor, { type CodeEditorHandle } from "./components/CodeEditor";
 import ConnectionsPanel from "./components/ConnectionsPanel";
@@ -63,7 +64,7 @@ ClassMethod Greet(name As %String) As %String
 
 interface Tab {
   id: string;
-  kind: "code" | "sql" | "api";
+  kind: "code" | "sql" | "api" | "agent";
   title: string;
   content: string;
   savedContent: string;
@@ -98,6 +99,7 @@ function App() {
   ]);
   const [activeTabId, setActiveTabId] = useState<string | null>("tab-0");
   const [pendingCloseId, setPendingCloseId] = useState<string | null>(null);
+  const [pendingWindowClose, setPendingWindowClose] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Record<string, Diagnostic[]>>({});
   const [panelOpen, setPanelOpen] = useState(true);
   const [outputOpen, setOutputOpen] = useState(true);
@@ -127,8 +129,12 @@ function App() {
   const codeEditorRef = useRef<CodeEditorHandle>(null);
   const nextLogId = useRef(1);
   const nextTabId = useRef(1);
+  // Read by the window-close listener below, which is registered once on mount — a ref keeps it
+  // seeing the current tabs instead of whatever `tabs` was when the listener was first attached.
+  const tabsRef = useRef<Tab[]>(tabs);
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
+  tabsRef.current = tabs;
 
   function appendLog(message: string, level: LogLevel = "info") {
     const time = new Date().toLocaleTimeString();
@@ -157,16 +163,43 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Consistent with the rest of the app's own modal styling — a native `alert()` would use the
+  // OS/browser's dialog chrome, breaking out of the app's theme.
+  function showAlert(message: string): Promise<void> {
+    return new Promise((resolve) => {
+      setStudioDialog({
+        kind: "alert",
+        message,
+        onAnswer: () => {
+          setStudioDialog(null);
+          resolve();
+        },
+      });
+    });
+  }
+
+  // main.ts intercepts the window's close (titlebar button, Alt+F4, OS close alike) and asks here
+  // first — see electron/main.ts's "close" listener — so unsaved tabs get the same warning closing
+  // a single tab already gets, instead of silently discarding them.
+  useEffect(() => {
+    if (!hasElectronAPI) return;
+    window.electronAPI.windowControls.onCloseRequested(() => {
+      const hasUnsaved = tabsRef.current.some(isDirty);
+      if (hasUnsaved) setPendingWindowClose(true);
+      else void window.electronAPI.windowControls.confirmClose();
+    });
+  }, []);
+
   async function importThemeFile(file: File) {
     let parsed: VSCodeTheme;
     try {
       parsed = JSON.parse(await file.text());
     } catch {
-      alert("Arquivo de tema inválido: JSON malformado.");
+      await showAlert("Arquivo de tema inválido: JSON malformado.");
       return;
     }
     if (!parsed.colors || !parsed.tokenColors) {
-      alert("Arquivo de tema inválido: faltam os campos 'colors' ou 'tokenColors'.");
+      await showAlert("Arquivo de tema inválido: faltam os campos 'colors' ou 'tokenColors'.");
       return;
     }
 
@@ -732,6 +765,35 @@ function App() {
     setActiveTabId(id);
   }
 
+  async function openAgentTerminal() {
+    await window.electronAPI.terminal.openExternal();
+  }
+
+  function openAgentTab(connectionId: string, namespace: string) {
+    const existing = tabs.find(
+      (tab) =>
+        tab.kind === "agent" && tab.connectionId === connectionId && tab.namespace === namespace,
+    );
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    const id = `agent-${nextTabId.current++}`;
+    setTabs((prev) => [
+      ...prev,
+      {
+        id,
+        kind: "agent",
+        title: `Agente: ${namespace}`,
+        content: "",
+        savedContent: "",
+        connectionId,
+        namespace,
+      },
+    ]);
+    setActiveTabId(id);
+  }
+
   function openApiTesterForActiveTab() {
     if (
       !activeTab ||
@@ -1091,6 +1153,26 @@ function App() {
         },
       ],
     },
+    {
+      label: "Agente",
+      items: [
+        {
+          label:
+            activeTab?.connectionId && activeTab?.namespace
+              ? `Abrir agente: ${activeTab.namespace}…`
+              : "Abrir agente…",
+          disabled: !activeTab?.connectionId || !activeTab?.namespace,
+          onSelect: () => {
+            if (activeTab?.connectionId && activeTab?.namespace)
+              openAgentTab(activeTab.connectionId, activeTab.namespace);
+          },
+        },
+        {
+          label: "Abrir terminal (opencode)…",
+          onSelect: () => hasElectronAPI && void openAgentTerminal(),
+        },
+      ],
+    },
     ...studioMenus
       .filter((menu) => menu.items.length > 0)
       .map((menu) => ({
@@ -1182,6 +1264,7 @@ function App() {
                 onOpenApiTester={(connectionId, namespace, docName) =>
                   void openApiTesterForDocument(connectionId, namespace, docName)
                 }
+                onOpenAgent={openAgentTab}
               />
             </div>
             <div className="resize-handle resize-handle-x" onMouseDown={startSidebarResize} />
@@ -1206,6 +1289,7 @@ function App() {
                   <span className="tab-title">
                     {tab.kind === "sql" ? "🗄️ " : ""}
                     {tab.kind === "api" ? "🔌 " : ""}
+                    {tab.kind === "agent" ? "🤖 " : ""}
                     {tab.readOnly ? "🔒 " : ""}
                     {tab.title}
                     {isDirty(tab) ? " ●" : ""}
@@ -1280,6 +1364,21 @@ function App() {
                   />
                 </div>
               ))}
+            {tabs
+              .filter((tab) => tab.kind === "agent" && tab.connectionId && tab.namespace)
+              .map((tab) => (
+                <div
+                  key={tab.id}
+                  className="editor-surface"
+                  style={{ display: tab.id === activeTabId ? "block" : "none" }}
+                >
+                  <AgentPanel
+                    connectionId={tab.connectionId!}
+                    namespace={tab.namespace!}
+                    onLog={appendLog}
+                  />
+                </div>
+              ))}
           </div>
           {outputOpen && (
             <>
@@ -1331,6 +1430,32 @@ function App() {
                 Fechar sem salvar
               </button>
               <button type="button" onClick={() => setPendingCloseId(null)}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingWindowClose && (
+        <div className="modal-overlay" onClick={() => setPendingWindowClose(false)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <h4>Fechar sem salvar?</h4>
+            <p>
+              Há {tabs.filter(isDirty).length} aba(s) com alterações não salvas. Fechar o programa
+              agora descarta essas alterações.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingWindowClose(false);
+                  void window.electronAPI.windowControls.confirmClose();
+                }}
+              >
+                Fechar sem salvar
+              </button>
+              <button type="button" onClick={() => setPendingWindowClose(false)}>
                 Cancelar
               </button>
             </div>

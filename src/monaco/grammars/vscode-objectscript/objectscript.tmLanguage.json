@@ -69,20 +69,14 @@
           "endCaptures": { "0": { "name": "punctuation.objectscript" } },
           "contentName": "meta.embedded.block.sql",
           "applyEndPatternLast": 1,
-          "patterns": [
-            { "include": "#embeddedSQL-brackets" },
-            { "include": "source.sql" }
-          ]
+          "patterns": [{ "include": "#embeddedSQL-brackets" }, { "include": "source.sql" }]
         }
       ],
       "repository": {
         "embeddedSQL-brackets": {
           "begin": "(?<=\\()(?!\\G)",
           "end": "\\)",
-          "patterns": [
-            { "include": "#embeddedSQL-brackets" },
-            { "include": "source.sql" }
-          ]
+          "patterns": [{ "include": "#embeddedSQL-brackets" }, { "include": "source.sql" }]
         }
       }
     },

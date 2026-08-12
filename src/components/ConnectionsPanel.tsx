@@ -3,13 +3,15 @@ import type { ConnectionProfile } from "../../electron/connections";
 import type { AtelierDocNameEntry } from "../../electron/atelier";
 import {
   buildDocumentTree,
+  collectClassFiles,
   type TreeFile,
   type TreeFolder,
   type TreeNode,
 } from "../utils/documentTree";
 import { isNoiseDocument } from "../utils/documentFilters";
 import { matchesGlob } from "../utils/glob";
-import { classSourceToExportXml } from "../utils/classXmlExport";
+import { classSourceToExportXml, combineExportXml } from "../utils/classXmlExport";
+import { mapWithConcurrency } from "../utils/concurrency";
 import { setKnownClasses } from "../monaco/classIndex";
 import FileExplorer from "./FileExplorer";
 import SidebarSection from "./SidebarSection";
@@ -26,6 +28,7 @@ interface ConnectionsPanelProps {
     newName: string,
   ) => void;
   onOpenApiTester?: (connectionId: string, namespace: string, docName: string) => void;
+  onOpenAgent?: (connectionId: string, namespace: string) => void;
 }
 
 function escapeRegExp(value: string): string {
@@ -58,6 +61,7 @@ function ConnectionsPanel({
   onDocumentDeleted,
   onDocumentRenamed,
   onOpenApiTester,
+  onOpenAgent,
 }: ConnectionsPanelProps) {
   const [connections, setConnections] = useState<ConnectionProfile[]>([]);
   const [explorerCollapsed, setExplorerCollapsed] = useState(false);
@@ -74,6 +78,7 @@ function ConnectionsPanel({
     x: number;
     y: number;
     node: TreeNode | null;
+    selectedNodes: TreeNode[];
   } | null>(null);
   const [newClassDialogOpen, setNewClassDialogOpen] = useState(false);
   const [newClassName, setNewClassName] = useState("");
@@ -84,6 +89,11 @@ function ConnectionsPanel({
     value: string;
   } | null>(null);
   const [connectingTo, setConnectingTo] = useState<string | null>(null);
+  const [confirmRequest, setConfirmRequest] = useState<{
+    message: string;
+    confirmLabel?: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const hasElectronAPI = typeof window.electronAPI !== "undefined";
 
@@ -128,7 +138,7 @@ function ConnectionsPanel({
     onLog(`Conexão "${profile.name || profile.host}" salva.`, "success");
   }
 
-  async function deleteConnection(id: string) {
+  async function performDeleteConnection(id: string) {
     await window.electronAPI.connections.delete(id);
     if (activeId === id) {
       setActiveId(null);
@@ -136,6 +146,17 @@ function ConnectionsPanel({
       setNamespaces([]);
     }
     await refreshConnections();
+  }
+
+  function requestDeleteConnection(connection: ConnectionProfile) {
+    setConfirmRequest({
+      message: `Remover a conexão "${connection.name || connection.host}"? As credenciais salvas serão apagadas.`,
+      confirmLabel: "Remover",
+      onConfirm: () => {
+        setConfirmRequest(null);
+        void performDeleteConnection(connection.id);
+      },
+    });
   }
 
   function editConnection(connection: ConnectionProfile) {
@@ -244,11 +265,11 @@ function ConnectionsPanel({
 
   function handleContextMenu(event: React.MouseEvent) {
     event.preventDefault();
-    setContextMenu({ x: event.clientX, y: event.clientY, node: null });
+    setContextMenu({ x: event.clientX, y: event.clientY, node: null, selectedNodes: [] });
   }
 
-  function handleNodeContextMenu(node: TreeNode, x: number, y: number) {
-    setContextMenu({ x, y, node });
+  function handleNodeContextMenu(node: TreeNode, x: number, y: number, selectedNodes: TreeNode[]) {
+    setContextMenu({ x, y, node, selectedNodes });
   }
 
   function openRenameDialog(node: TreeFile) {
@@ -313,36 +334,62 @@ function ConnectionsPanel({
     }
   }
 
-  async function requestDelete(node: TreeFile) {
+  function requestDelete(node: TreeFile) {
     setContextMenu(null);
     if (!activeId || !activeNamespace) return;
-    if (!window.confirm(`Excluir "${node.docName}"? Esta ação não pode ser desfeita.`)) return;
+    const connectionId = activeId;
+    const namespace = activeNamespace;
+    setConfirmRequest({
+      message: `Excluir "${node.docName}"? Esta ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      onConfirm: () => {
+        setConfirmRequest(null);
+        void performDelete(connectionId, namespace, node);
+      },
+    });
+  }
+
+  async function performDelete(connectionId: string, namespace: string, node: TreeFile) {
     onLog(`Excluindo ${node.docName}…`);
     try {
-      await window.electronAPI.atelier.deleteDocument(activeId, activeNamespace, node.docName);
-      await loadDocuments(activeId, activeNamespace);
-      onDocumentDeleted?.(activeId, activeNamespace, node.docName);
+      await window.electronAPI.atelier.deleteDocument(connectionId, namespace, node.docName);
+      await loadDocuments(connectionId, namespace);
+      onDocumentDeleted?.(connectionId, namespace, node.docName);
       onLog(`${node.docName} excluído.`, "success");
     } catch (error) {
       onLog(`Erro ao excluir ${node.docName}: ${(error as Error).message}`, "error");
     }
   }
 
-  async function exportClassXml(node: TreeFile) {
+  async function exportNodesAsXml(nodes: TreeNode[]) {
     setContextMenu(null);
     if (!activeId || !activeNamespace) return;
-    onLog(`Exportando ${node.docName} como XML…`);
+    const classFiles = collectClassFiles(nodes);
+    if (classFiles.length === 0) {
+      onLog("Nenhuma classe .cls encontrada na seleção.", "error");
+      return;
+    }
+    onLog(`Exportando ${classFiles.length} classe(s) como XML…`);
     try {
-      const doc = await window.electronAPI.atelier.getDocument(
-        activeId,
-        activeNamespace,
-        node.docName,
-      );
-      const { xml, className } = classSourceToExportXml(doc.content);
-      const savedPath = await window.electronAPI.files.saveText(`${className}.cls.xml`, xml);
-      if (savedPath) onLog(`${node.docName} exportado para ${savedPath}.`, "success");
+      const xmls: string[] = new Array(classFiles.length);
+      let firstClassName = "";
+      await mapWithConcurrency(classFiles, 4, async (file, index) => {
+        const doc = await window.electronAPI.atelier.getDocument(
+          activeId,
+          activeNamespace,
+          file.docName,
+        );
+        const { xml, className } = classSourceToExportXml(doc.content);
+        xmls[index] = xml;
+        if (index === 0) firstClassName = className;
+      });
+      const combined = classFiles.length === 1 ? xmls[0] : combineExportXml(xmls);
+      const suggestedName = classFiles.length === 1 ? `${firstClassName}.cls.xml` : "Export.xml";
+      const savedPath = await window.electronAPI.files.saveText(suggestedName, combined);
+      if (savedPath)
+        onLog(`${classFiles.length} classe(s) exportada(s) para ${savedPath}.`, "success");
     } catch (error) {
-      onLog(`Erro ao exportar ${node.docName}: ${(error as Error).message}`, "error");
+      onLog(`Erro ao exportar: ${(error as Error).message}`, "error");
     }
   }
 
@@ -442,7 +489,11 @@ function ConnectionsPanel({
               <button type="button" onClick={() => editConnection(connection)} title="Editar">
                 ✎
               </button>
-              <button type="button" onClick={() => deleteConnection(connection.id)} title="Remover">
+              <button
+                type="button"
+                onClick={() => requestDeleteConnection(connection)}
+                title="Remover"
+              >
                 ✕
               </button>
             </li>
@@ -527,21 +578,45 @@ function ConnectionsPanel({
           {contextMenu.node === null && (
             <li onClick={() => openNewClassDialog()}>🧩 Nova Classe…</li>
           )}
-          {contextMenu.node?.type === "folder" &&
+          {contextMenu.node === null && onOpenAgent && (
+            <li
+              onClick={() => {
+                setContextMenu(null);
+                if (activeId && activeNamespace) onOpenAgent(activeId, activeNamespace);
+              }}
+            >
+              🤖 Abrir agente (opencode)…
+            </li>
+          )}
+          {contextMenu.selectedNodes.length > 1 && (
+            <li onClick={() => void exportNodesAsXml(contextMenu.selectedNodes)}>
+              📤 Exportar {contextMenu.selectedNodes.length} itens como XML…
+            </li>
+          )}
+          {contextMenu.selectedNodes.length <= 1 &&
+            contextMenu.node?.type === "folder" &&
             (() => {
               const folder = contextMenu.node as TreeFolder;
               return (
-                <li onClick={() => openNewClassDialog(`${folder.path}.`)}>🧩 Nova Classe aqui…</li>
+                <>
+                  <li onClick={() => openNewClassDialog(`${folder.path}.`)}>
+                    🧩 Nova Classe aqui…
+                  </li>
+                  <li onClick={() => void exportNodesAsXml([folder])}>
+                    📤 Exportar pasta como XML…
+                  </li>
+                </>
               );
             })()}
-          {contextMenu.node?.type === "file" &&
+          {contextMenu.selectedNodes.length <= 1 &&
+            contextMenu.node?.type === "file" &&
             (() => {
               const file = contextMenu.node as TreeFile;
               return (
                 <>
                   <li onClick={() => openRenameDialog(file)}>✎ Renomear…</li>
                   {file.docName.toLowerCase().endsWith(".cls") && (
-                    <li onClick={() => void exportClassXml(file)}>📤 Exportar como XML…</li>
+                    <li onClick={() => void exportNodesAsXml([file])}>📤 Exportar como XML…</li>
                   )}
                   {file.docName.toLowerCase().endsWith(".cls") && onOpenApiTester && (
                     <li
@@ -610,6 +685,23 @@ function ConnectionsPanel({
         <div className="connecting-overlay">
           <div className="connecting-spinner" />
           <div className="connecting-message">Conectando ao servidor {connectingTo}…</div>
+        </div>
+      )}
+
+      {confirmRequest && (
+        <div className="modal-overlay" onClick={() => setConfirmRequest(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <h4>Confirmar</h4>
+            <p>{confirmRequest.message}</p>
+            <div className="modal-actions">
+              <button type="button" onClick={confirmRequest.onConfirm}>
+                {confirmRequest.confirmLabel ?? "Confirmar"}
+              </button>
+              <button type="button" onClick={() => setConfirmRequest(null)}>
+                Cancelar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

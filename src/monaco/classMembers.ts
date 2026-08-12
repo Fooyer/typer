@@ -16,21 +16,66 @@ export interface ClassMember {
  * inheritance) is layered on top and takes precedence for anything it also defines.
  */
 export const STATIC_OBJECT_MEMBERS: ClassMember[] = [
-  { name: "%New", kind: "method", classMethod: true, detail: "(...) As %ObjectHandle — cria uma nova instância." },
-  { name: "%Open", kind: "method", classMethod: true, detail: "(id) As %ObjectHandle — abre uma instância existente por ID." },
-  { name: "%OpenId", kind: "method", classMethod: true, detail: "(id, concurrency, status) As %ObjectHandle" },
-  { name: "%Save", kind: "method", classMethod: false, detail: "() As %Status — salva a instância." },
-  { name: "%Delete", kind: "method", classMethod: false, detail: "() As %Status — remove esta instância." },
-  { name: "%DeleteId", kind: "method", classMethod: true, detail: "(id) As %Status — remove uma instância por ID." },
+  {
+    name: "%New",
+    kind: "method",
+    classMethod: true,
+    detail: "(...) As %ObjectHandle — cria uma nova instância.",
+  },
+  {
+    name: "%Open",
+    kind: "method",
+    classMethod: true,
+    detail: "(id) As %ObjectHandle — abre uma instância existente por ID.",
+  },
+  {
+    name: "%OpenId",
+    kind: "method",
+    classMethod: true,
+    detail: "(id, concurrency, status) As %ObjectHandle",
+  },
+  {
+    name: "%Save",
+    kind: "method",
+    classMethod: false,
+    detail: "() As %Status — salva a instância.",
+  },
+  {
+    name: "%Delete",
+    kind: "method",
+    classMethod: false,
+    detail: "() As %Status — remove esta instância.",
+  },
+  {
+    name: "%DeleteId",
+    kind: "method",
+    classMethod: true,
+    detail: "(id) As %Status — remove uma instância por ID.",
+  },
   { name: "%Exists", kind: "method", classMethod: false, detail: "() As %Boolean" },
   { name: "%ExistsId", kind: "method", classMethod: true, detail: "(id) As %Boolean" },
-  { name: "%Id", kind: "method", classMethod: false, detail: "() As %String — o ID desta instância." },
+  {
+    name: "%Id",
+    kind: "method",
+    classMethod: false,
+    detail: "() As %String — o ID desta instância.",
+  },
   { name: "%Oid", kind: "method", classMethod: false, detail: "() As %ObjectIdentity" },
   { name: "%ClassName", kind: "method", classMethod: false, detail: "(fullyQualified) As %String" },
   { name: "%IsA", kind: "method", classMethod: false, detail: "(className) As %Boolean" },
   { name: "%Extends", kind: "method", classMethod: true, detail: "(className) As %Boolean" },
-  { name: "%ConstructClone", kind: "method", classMethod: false, detail: "(deep) As %ObjectHandle" },
-  { name: "%GetParameter", kind: "method", classMethod: true, detail: "(name) — valor de um Parameter da classe." },
+  {
+    name: "%ConstructClone",
+    kind: "method",
+    classMethod: false,
+    detail: "(deep) As %ObjectHandle",
+  },
+  {
+    name: "%GetParameter",
+    kind: "method",
+    classMethod: true,
+    detail: "(name) — valor de um Parameter da classe.",
+  },
   { name: "%ValidateObject", kind: "method", classMethod: false, detail: "() As %Status" },
   { name: "%DeepCompare", kind: "method", classMethod: false, detail: "(oref) As %Boolean" },
 ];
@@ -38,17 +83,67 @@ export const STATIC_OBJECT_MEMBERS: ClassMember[] = [
 /** %DynamicObject/%DynamicArray (the `{...}`/`[...]` literal syntax) share this core API — %New/
  * %Save/%Open etc from STATIC_OBJECT_MEMBERS don't apply to them and would be actively misleading. */
 const DYNAMIC_OBJECT_MEMBERS: ClassMember[] = [
-  { name: "%Get", kind: "method", classMethod: false, detail: "(key, default, type) — lê uma propriedade/elemento." },
-  { name: "%Set", kind: "method", classMethod: false, detail: "(key, value, type) — define uma propriedade/elemento." },
-  { name: "%Remove", kind: "method", classMethod: false, detail: "(key) — remove uma propriedade/elemento." },
-  { name: "%GetIterator", kind: "method", classMethod: false, detail: "() — iterador para percorrer chaves/valores." },
-  { name: "%Size", kind: "method", classMethod: false, detail: "() As %Integer — número de elementos (array)." },
+  {
+    name: "%Get",
+    kind: "method",
+    classMethod: false,
+    detail: "(key, default, type) — lê uma propriedade/elemento.",
+  },
+  {
+    name: "%Set",
+    kind: "method",
+    classMethod: false,
+    detail: "(key, value, type) — define uma propriedade/elemento.",
+  },
+  {
+    name: "%Remove",
+    kind: "method",
+    classMethod: false,
+    detail: "(key) — remove uma propriedade/elemento.",
+  },
+  {
+    name: "%GetIterator",
+    kind: "method",
+    classMethod: false,
+    detail: "() — iterador para percorrer chaves/valores.",
+  },
+  {
+    name: "%Size",
+    kind: "method",
+    classMethod: false,
+    detail: "() As %Integer — número de elementos (array).",
+  },
   { name: "%IsDefined", kind: "method", classMethod: false, detail: "(key) As %Boolean" },
-  { name: "%ToJSON", kind: "method", classMethod: false, detail: "(target, options) As %Status — serializa como JSON." },
-  { name: "%Push", kind: "method", classMethod: false, detail: "(value, type) — adiciona ao fim (array)." },
-  { name: "%Pop", kind: "method", classMethod: false, detail: "(type) — remove e retorna o último elemento (array)." },
-  { name: "%FromJSON", kind: "method", classMethod: true, detail: "(stream/string) — cria a partir de texto JSON." },
-  { name: "%Count", kind: "method", classMethod: false, detail: "() As %Integer — número de elementos (array)." },
+  {
+    name: "%ToJSON",
+    kind: "method",
+    classMethod: false,
+    detail: "(target, options) As %Status — serializa como JSON.",
+  },
+  {
+    name: "%Push",
+    kind: "method",
+    classMethod: false,
+    detail: "(value, type) — adiciona ao fim (array).",
+  },
+  {
+    name: "%Pop",
+    kind: "method",
+    classMethod: false,
+    detail: "(type) — remove e retorna o último elemento (array).",
+  },
+  {
+    name: "%FromJSON",
+    kind: "method",
+    classMethod: true,
+    detail: "(stream/string) — cria a partir de texto JSON.",
+  },
+  {
+    name: "%Count",
+    kind: "method",
+    classMethod: false,
+    detail: "() As %Integer — número de elementos (array).",
+  },
 ];
 
 const OFFLINE_FALLBACKS: Record<string, ClassMember[]> = {
@@ -62,7 +157,9 @@ let memberProvider: ((className: string) => Promise<ClassMember[]>) | null = nul
 
 /** App.tsx wires this to query the active tab's connection/namespace for a class's compiled
  * methods/properties — see registerObjectScriptCompletion's dot-completion for the trigger. */
-export function setClassMemberProvider(fn: ((className: string) => Promise<ClassMember[]>) | null): void {
+export function setClassMemberProvider(
+  fn: ((className: string) => Promise<ClassMember[]>) | null,
+): void {
   memberProvider = fn;
   cache.clear();
 }

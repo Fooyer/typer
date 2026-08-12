@@ -20,13 +20,33 @@ export interface AppTheme {
 /** Bundled themes ported from VS Code's own (MIT-licensed) built-in themes, see src/themes/vscode/LICENSE.txt. */
 export const BUILTIN_THEMES: AppTheme[] = [
   { id: "dark-plus", label: "Dark+ (VS Code)", kind: "dark", vscodeTheme: darkPlus as VSCodeTheme },
-  { id: "light-plus", label: "Light+ (VS Code)", kind: "light", vscodeTheme: lightPlus as VSCodeTheme },
+  {
+    id: "light-plus",
+    label: "Light+ (VS Code)",
+    kind: "light",
+    vscodeTheme: lightPlus as VSCodeTheme,
+  },
   { id: "monokai", label: "Monokai", kind: "dark", vscodeTheme: monokai as VSCodeTheme },
-  { id: "solarized-dark", label: "Solarized Dark", kind: "dark", vscodeTheme: solarizedDark as VSCodeTheme },
-  { id: "solarized-light", label: "Solarized Light", kind: "light", vscodeTheme: solarizedLight as VSCodeTheme },
+  {
+    id: "solarized-dark",
+    label: "Solarized Dark",
+    kind: "dark",
+    vscodeTheme: solarizedDark as VSCodeTheme,
+  },
+  {
+    id: "solarized-light",
+    label: "Solarized Light",
+    kind: "light",
+    vscodeTheme: solarizedLight as VSCodeTheme,
+  },
   { id: "abyss", label: "Abyss", kind: "dark", vscodeTheme: abyss as VSCodeTheme },
   { id: "kimbie-dark", label: "Kimbie Dark", kind: "dark", vscodeTheme: kimbieDark as VSCodeTheme },
-  { id: "tomorrow-night-blue", label: "Tomorrow Night Blue", kind: "dark", vscodeTheme: tomorrowNightBlue as VSCodeTheme },
+  {
+    id: "tomorrow-night-blue",
+    label: "Tomorrow Night Blue",
+    kind: "dark",
+    vscodeTheme: tomorrowNightBlue as VSCodeTheme,
+  },
   // Ported from the official Dracula theme (MIT-licensed, Dracula Theme), not Microsoft —
   // see src/themes/vscode/dracula-LICENSE.txt.
   { id: "dracula", label: "Dracula", kind: "dark", vscodeTheme: dracula as VSCodeTheme },
@@ -45,7 +65,10 @@ export function getTheme(id: string): AppTheme | undefined {
 
 export function applyMonacoTheme(monaco: typeof Monaco, theme: AppTheme) {
   if (registeredMonacoIds.has(theme.id)) return;
-  monaco.editor.defineTheme(theme.id, vscodeThemeToMonaco(theme.vscodeTheme, theme.kind === "dark" ? "vs-dark" : "vs"));
+  monaco.editor.defineTheme(
+    theme.id,
+    vscodeThemeToMonaco(theme.vscodeTheme, theme.kind === "dark" ? "vs-dark" : "vs"),
+  );
   registeredMonacoIds.add(theme.id);
 }
 

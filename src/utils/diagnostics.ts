@@ -23,7 +23,11 @@ export function parseCompileDiagnostics(consoleLines: string[]): Diagnostic[] {
     const lineNumber = Number(lineMatch[1]);
     if (!Number.isFinite(lineNumber) || lineNumber < 1) continue;
 
-    diagnostics.push({ line: lineNumber, message: line.trim(), severity: isError ? "error" : "warning" });
+    diagnostics.push({
+      line: lineNumber,
+      message: line.trim(),
+      severity: isError ? "error" : "warning",
+    });
   }
   return diagnostics;
 }

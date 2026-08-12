@@ -60,6 +60,25 @@ export function buildDocumentTree(docs: AtelierDocNameEntry[]): TreeNode[] {
   return root.children;
 }
 
+/** Key uniquely identifying a node within a tree, used for selection tracking. */
+export function nodeKey(node: TreeNode): string {
+  return node.type === "file" ? `f:${node.docName}` : `d:${node.path}`;
+}
+
+/** Recursively collects every `.cls` file under the given nodes (a lone file node is included as-is). */
+export function collectClassFiles(nodes: TreeNode[]): TreeFile[] {
+  const result: TreeFile[] = [];
+  const visit = (node: TreeNode) => {
+    if (node.type === "file") {
+      if (node.docName.toLowerCase().endsWith(".cls")) result.push(node);
+    } else {
+      node.children.forEach(visit);
+    }
+  };
+  nodes.forEach(visit);
+  return result;
+}
+
 function sortTree(folder: TreeFolder) {
   folder.children.sort((a, b) => {
     if (a.type !== b.type) return a.type === "folder" ? -1 : 1;

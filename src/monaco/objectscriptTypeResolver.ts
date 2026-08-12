@@ -78,7 +78,10 @@ export async function resolveVariableType(
   const predefined = PREDEFINED_OBJECT_TYPES[varName.toLowerCase()];
   if (predefined) return predefined;
 
-  const typePattern = new RegExp(`\\b${escapeRegExp(varName)}\\s+As\\s+([%\\p{L}_][\\p{L}\\p{N}_.]*)`, "iu");
+  const typePattern = new RegExp(
+    `\\b${escapeRegExp(varName)}\\s+As\\s+([%\\p{L}_][\\p{L}\\p{N}_.]*)`,
+    "iu",
+  );
   let methodBodyStart: { line: number; col: number } | null = null;
 
   // Nearest enclosing method's formal parameters, searching upward from the cursor.
@@ -110,7 +113,11 @@ export async function resolveVariableType(
     const dynamicArrayPattern = new RegExp(`\\bSet\\s+${escapeRegExp(varName)}\\s*=\\s*\\[`, "i");
 
     let found: { className: string; methodName?: string } | null = null;
-    for (let line = methodBodyStart.line; line <= position.lineNumber - 1 && line < lines.length; line++) {
+    for (
+      let line = methodBodyStart.line;
+      line <= position.lineNumber - 1 && line < lines.length;
+      line++
+    ) {
       const text = lines[line];
       const classMatch = classAssignPattern.exec(text);
       if (classMatch) {
@@ -124,8 +131,11 @@ export async function resolveVariableType(
     if (found?.methodName) {
       if (INSTANCE_RETURNING_METHODS.has(found.methodName.toLowerCase())) return found.className;
       const members = await getClassMembers(found.className);
-      const method = members.find((m) => m.kind === "method" && m.name.toLowerCase() === found!.methodName!.toLowerCase());
-      if (method?.returnType && !PRIMITIVE_RETURN_TYPES.has(method.returnType.toLowerCase())) return method.returnType;
+      const method = members.find(
+        (m) => m.kind === "method" && m.name.toLowerCase() === found!.methodName!.toLowerCase(),
+      );
+      if (method?.returnType && !PRIMITIVE_RETURN_TYPES.has(method.returnType.toLowerCase()))
+        return method.returnType;
     } else if (found) {
       return found.className;
     }
@@ -149,7 +159,10 @@ const DECLARATION_PATTERN = /\b(?:Set|New|For|Catch)\s+([%\p{L}_][\p{L}\p{N}_]*)
  * completion. Heuristic like the rest of this scanner: only catches the first target of a
  * comma-chained `Set a=1,b=2`, and can't see across a literal `{`/`}` inside a string.
  */
-export function collectLocalIdentifiers(model: Monaco.editor.ITextModel, position: Monaco.Position): string[] {
+export function collectLocalIdentifiers(
+  model: Monaco.editor.ITextModel,
+  position: Monaco.Position,
+): string[] {
   const lines = model.getLinesContent();
   const names = new Set<string>();
 
@@ -159,11 +172,15 @@ export function collectLocalIdentifiers(model: Monaco.editor.ITextModel, positio
     const openParen = lines[i].indexOf("(");
     const closeParen = openParen >= 0 ? findMatchingParen(lines[i], openParen) : -1;
     if (closeParen < 0) break;
-    for (const name of extractParamNames(lines[i].slice(openParen + 1, closeParen))) names.add(name);
+    for (const name of extractParamNames(lines[i].slice(openParen + 1, closeParen)))
+      names.add(name);
 
     const bodyStart = findBodyStart(lines, i, closeParen + 1);
     if (!bodyStart) break;
-    const bodyEnd = findBodyEnd(lines, bodyStart.line, bodyStart.col) ?? { line: lines.length - 1, col: Infinity };
+    const bodyEnd = findBodyEnd(lines, bodyStart.line, bodyStart.col) ?? {
+      line: lines.length - 1,
+      col: Infinity,
+    };
 
     for (let line = bodyStart.line; line <= bodyEnd.line && line < lines.length; line++) {
       DECLARATION_PATTERN.lastIndex = 0;

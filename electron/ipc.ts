@@ -3,6 +3,9 @@ import { promises as fs } from "node:fs";
 import * as connections from "./connections";
 import * as atelier from "./atelier";
 import { openStudioCspWindow } from "./studioCspWindow";
+import { defaultAgentWorkingDirectory, openExternalTerminal } from "./externalTerminal";
+import { abortAgentRun, runAgent } from "./agentRun";
+import { resolvePendingWrite } from "./agentBridge";
 import type { ConnectionProfile } from "./connections";
 import type { AtelierConnectionConfig } from "./atelier";
 
@@ -29,6 +32,19 @@ function getProfileOrThrow(id: string): ConnectionProfile {
   return profile;
 }
 
+// The renderer gets a chance to warn about unsaved tabs (see App.tsx's "window:close-requested"
+// handler) before the window actually goes away. main.ts's `close` listener consults this set to
+// tell a user-confirmed close (or one with nothing unsaved to lose) apart from the first attempt.
+const forceCloseWindows = new WeakSet<BrowserWindow>();
+
+export function markWindowForceClose(win: BrowserWindow): void {
+  forceCloseWindows.add(win);
+}
+
+export function isWindowForceClose(win: BrowserWindow): boolean {
+  return forceCloseWindows.has(win);
+}
+
 export function registerIpcHandlers(): void {
   ipcMain.handle("window:minimize", (event) =>
     BrowserWindow.fromWebContents(event.sender)?.minimize(),
@@ -42,6 +58,16 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("window:close", (event) => BrowserWindow.fromWebContents(event.sender)?.close());
+
+  // Invoked only after the renderer has confirmed it's fine to discard any unsaved tabs (or had
+  // none to begin with) — see App.tsx. Marks the window so main.ts's `close` listener lets this
+  // second close attempt through instead of intercepting it again.
+  ipcMain.handle("window:confirmClose", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    markWindowForceClose(win);
+    win.close();
+  });
 
   ipcMain.handle("connections:list", () => connections.listConnections());
 
@@ -240,6 +266,31 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle("studio:openCspAction", async (_event, url: string) => openStudioCspWindow(url));
+
+  ipcMain.handle("terminal:openExternal", (_event, cwd?: string) => {
+    openExternalTerminal(cwd || defaultAgentWorkingDirectory());
+  });
+
+  ipcMain.handle(
+    "agent:run",
+    (event, connectionId: string, namespace: string, prompt: string, model?: string) => {
+      const profile = getProfileOrThrow(connectionId);
+      return runAgent(
+        connectionId,
+        namespace,
+        toAtelierConfig(profile),
+        prompt,
+        event.sender,
+        model,
+      );
+    },
+  );
+
+  ipcMain.handle("agent:abort", (_event, runId: string) => abortAgentRun(runId));
+
+  ipcMain.handle("agent:resolvePendingWrite", (_event, pendingId: string, approved: boolean) =>
+    resolvePendingWrite(pendingId, approved),
+  );
 
   ipcMain.handle("dialog:saveTextFile", async (event, suggestedName: string, content: string) => {
     const win = BrowserWindow.fromWebContents(event.sender);

@@ -12,6 +12,24 @@ import type {
   StudioUserAction,
 } from "./atelier";
 
+export interface AgentEvent {
+  runId: string;
+  line: string;
+  stderr?: boolean;
+}
+
+export interface AgentDone {
+  runId: string;
+  code: number;
+}
+
+export interface AgentPendingWrite {
+  pendingId: string;
+  runId: string;
+  name: string;
+  patch: string;
+}
+
 contextBridge.exposeInMainWorld("electronAPI", {
   getVersions: () => ({
     chrome: process.versions.chrome,
@@ -25,6 +43,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     minimize: (): Promise<void> => ipcRenderer.invoke("window:minimize"),
     toggleMaximize: (): Promise<void> => ipcRenderer.invoke("window:toggleMaximize"),
     close: (): Promise<void> => ipcRenderer.invoke("window:close"),
+    onCloseRequested: (callback: () => void): void => {
+      ipcRenderer.on("window:close-requested", () => callback());
+    },
+    confirmClose: (): Promise<void> => ipcRenderer.invoke("window:confirmClose"),
   },
   connections: {
     list: (): Promise<ConnectionProfile[]> => ipcRenderer.invoke("connections:list"),
@@ -140,5 +162,34 @@ contextBridge.exposeInMainWorld("electronAPI", {
   files: {
     saveText: (suggestedName: string, content: string): Promise<string | null> =>
       ipcRenderer.invoke("dialog:saveTextFile", suggestedName, content),
+  },
+  terminal: {
+    openExternal: (cwd?: string): Promise<void> => ipcRenderer.invoke("terminal:openExternal", cwd),
+  },
+  agent: {
+    run: (
+      connectionId: string,
+      namespace: string,
+      prompt: string,
+      model?: string,
+    ): Promise<string> => ipcRenderer.invoke("agent:run", connectionId, namespace, prompt, model),
+    abort: (runId: string): Promise<void> => ipcRenderer.invoke("agent:abort", runId),
+    resolvePendingWrite: (pendingId: string, approved: boolean): Promise<void> =>
+      ipcRenderer.invoke("agent:resolvePendingWrite", pendingId, approved),
+    onEvent: (callback: (payload: AgentEvent) => void): (() => void) => {
+      const handler = (_event: unknown, payload: AgentEvent) => callback(payload);
+      ipcRenderer.on("agent:event", handler);
+      return () => ipcRenderer.removeListener("agent:event", handler);
+    },
+    onDone: (callback: (payload: AgentDone) => void): (() => void) => {
+      const handler = (_event: unknown, payload: AgentDone) => callback(payload);
+      ipcRenderer.on("agent:done", handler);
+      return () => ipcRenderer.removeListener("agent:done", handler);
+    },
+    onPendingWrite: (callback: (payload: AgentPendingWrite) => void): (() => void) => {
+      const handler = (_event: unknown, payload: AgentPendingWrite) => callback(payload);
+      ipcRenderer.on("agent:pendingWrite", handler);
+      return () => ipcRenderer.removeListener("agent:pendingWrite", handler);
+    },
   },
 });

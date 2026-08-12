@@ -110,7 +110,9 @@
     },
 
     "continue": {
-      "patterns": [{ "match": "(\\s+\\#\\#(?i)(continue)\\s*)", "name": "keyword.control.objectscript" }]
+      "patterns": [
+        { "match": "(\\s+\\#\\#(?i)(continue)\\s*)", "name": "keyword.control.objectscript" }
+      ]
     },
 
     "macros": {

@@ -1,4 +1,8 @@
-export function downloadTextFile(filename: string, content: string, mimeType = "application/xml"): void {
+export function downloadTextFile(
+  filename: string,
+  content: string,
+  mimeType = "application/xml",
+): void {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

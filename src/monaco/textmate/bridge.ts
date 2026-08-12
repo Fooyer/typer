@@ -9,7 +9,11 @@ const wiredLanguages = new Set<string>();
  * as its tokens provider. Ported from InterSystems' vscode-objectscript grammars rather than
  * the bootstrap Monarch tokenizer, for accurate ObjectScript syntax highlighting.
  */
-export async function wireTextmateGrammar(monaco: typeof Monaco, languageId: string, scopeName: string) {
+export async function wireTextmateGrammar(
+  monaco: typeof Monaco,
+  languageId: string,
+  scopeName: string,
+) {
   if (wiredLanguages.has(languageId)) return;
   wiredLanguages.add(languageId);
 

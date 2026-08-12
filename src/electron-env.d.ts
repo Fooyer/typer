@@ -10,6 +10,7 @@ import type {
   StudioMenu,
   StudioUserAction,
 } from "../electron/atelier";
+import type { AgentDone, AgentEvent, AgentPendingWrite } from "../electron/preload";
 
 export interface ElectronAPI {
   getVersions: () => { chrome: string; node: string; electron: string };
@@ -18,6 +19,8 @@ export interface ElectronAPI {
     minimize: () => Promise<void>;
     toggleMaximize: () => Promise<void>;
     close: () => Promise<void>;
+    onCloseRequested: (callback: () => void) => void;
+    confirmClose: () => Promise<void>;
   };
   connections: {
     list: () => Promise<ConnectionProfile[]>;
@@ -100,6 +103,22 @@ export interface ElectronAPI {
   };
   files: {
     saveText: (suggestedName: string, content: string) => Promise<string | null>;
+  };
+  terminal: {
+    openExternal: (cwd?: string) => Promise<void>;
+  };
+  agent: {
+    run: (
+      connectionId: string,
+      namespace: string,
+      prompt: string,
+      model?: string,
+    ) => Promise<string>;
+    abort: (runId: string) => Promise<void>;
+    resolvePendingWrite: (pendingId: string, approved: boolean) => Promise<void>;
+    onEvent: (callback: (payload: AgentEvent) => void) => () => void;
+    onDone: (callback: (payload: AgentDone) => void) => () => void;
+    onPendingWrite: (callback: (payload: AgentPendingWrite) => void) => () => void;
   };
 }
 

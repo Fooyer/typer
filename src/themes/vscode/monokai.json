@@ -132,19 +132,14 @@
     },
     {
       "name": "Template Definition",
-      "scope": [
-        "punctuation.definition.template-expression",
-        "punctuation.section.embedded"
-      ],
+      "scope": ["punctuation.definition.template-expression", "punctuation.section.embedded"],
       "settings": {
         "foreground": "#F92672"
       }
     },
     {
       "name": "Reset JavaScript string interpolation expression",
-      "scope": [
-        "meta.template.expression"
-      ],
+      "scope": ["meta.template.expression"],
       "settings": {
         "foreground": "#F8F8F2"
       }
@@ -211,10 +206,7 @@
     },
     {
       "name": "Inherited class",
-      "scope": [
-        "entity.other.inherited-class",
-        "punctuation.separator.namespace.ruby"
-      ],
+      "scope": ["entity.other.inherited-class", "punctuation.separator.namespace.ruby"],
       "settings": {
         "fontStyle": "italic underline",
         "foreground": "#A6E22E"
@@ -447,9 +439,7 @@
     },
     {
       "name": "Markdown List Punctuation",
-      "scope": [
-        "punctuation.definition.list.begin.markdown"
-      ],
+      "scope": ["punctuation.definition.list.begin.markdown"],
       "settings": {
         "foreground": "#A6E22E"
       }

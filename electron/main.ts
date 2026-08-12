@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { registerIpcHandlers } from "./ipc";
+import { isWindowForceClose, registerIpcHandlers } from "./ipc";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,6 +24,18 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  // Give the renderer a chance to warn about unsaved tabs before the window actually closes —
+  // covers the custom titlebar's close button, Alt+F4, and the OS window-close control alike,
+  // since all of them end up firing this same `close` event on the BrowserWindow. Renderer decides
+  // (see App.tsx's "window:close-requested" handler) and, if it wants to proceed, calls back
+  // through "window:confirmClose", which marks the window and closes it again — this time let
+  // through below.
+  win.on("close", (event) => {
+    if (!win || isWindowForceClose(win)) return;
+    event.preventDefault();
+    win.webContents.send("window:close-requested");
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {

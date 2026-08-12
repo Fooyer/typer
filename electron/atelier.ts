@@ -92,16 +92,28 @@ function buildUrl(
   return `${config.https ? "https" : "http"}://${config.host}:${config.port}${prefix}/api/atelier/${path}${queryString}`;
 }
 
+// Without this, a stalled connection (dropped wifi mid-request, IRIS Community's session pool
+// exhausted and never replying) leaves the caller's promise pending forever — the agent sync/run
+// flow in particular would just sit at "Sincronizando…" indefinitely with no error to react to.
+const REQUEST_TIMEOUT_MS = 30_000;
+
 async function request<T>(
   config: AtelierConnectionConfig,
   method: string,
   path: string,
-  options: { body?: unknown; params?: Record<string, string | number | boolean | undefined> } = {},
+  options: {
+    body?: unknown;
+    params?: Record<string, string | number | boolean | undefined>;
+    timeoutMs?: number;
+  } = {},
 ): Promise<AtelierResponse<T>> {
   const auth = Buffer.from(`${config.username}:${config.password}`).toString("base64");
   const key = cookieKey(config);
   const cookies = cookieJar.get(key) ?? [];
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   let response: Response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     response = await fetch(buildUrl(config, path, options.params), {
       method,
@@ -114,8 +126,14 @@ async function request<T>(
         ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
       },
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
     });
   } catch (error) {
+    if ((error as Error).name === "AbortError") {
+      throw new AtelierError(
+        `Tempo limite excedido (${timeoutMs / 1000}s) ao falar com ${config.host}:${config.port}.`,
+      );
+    }
     const code = (error as { cause?: { code?: string } })?.cause?.code;
     const reason =
       code === "ECONNREFUSED"
@@ -126,6 +144,8 @@ async function request<T>(
             ? "conexão perdida ou expirou."
             : "falha de rede.";
     throw new AtelierError(`Não foi possível conectar a ${config.host}:${config.port} — ${reason}`);
+  } finally {
+    clearTimeout(timeout);
   }
 
   updateCookies(key, response.headers.getSetCookie?.() ?? []);
@@ -367,9 +387,13 @@ export async function compileDocuments(
   namespace: string,
   docs: string[],
 ): Promise<string[]> {
+  // Compiling (especially a first-time %Persistent class, which also generates storage/index
+  // definitions) is a genuinely slower operation than a plain read/write — the default timeout
+  // that's reasonable for those was tripping on real, still-in-progress compiles.
   const response = await request<string[]>(config, "POST", `v1/${namespace}/action/compile`, {
     body: docs,
     params: { flags: "cuk", source: false },
+    timeoutMs: 120_000,
   });
   return response.console;
 }

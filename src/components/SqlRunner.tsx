@@ -35,7 +35,9 @@ function SqlRunner({ onLog }: SqlRunnerProps) {
       const available = await window.electronAPI.atelier.listNamespaces(id);
       setNamespaces(available);
       const profile = connections.find((connection) => connection.id === id);
-      setNamespace(profile && available.includes(profile.namespace) ? profile.namespace : (available[0] ?? ""));
+      setNamespace(
+        profile && available.includes(profile.namespace) ? profile.namespace : (available[0] ?? ""),
+      );
     } catch (error) {
       onLog(`Erro ao listar namespaces: ${(error as Error).message}`, "error");
     }
@@ -76,7 +78,11 @@ function SqlRunner({ onLog }: SqlRunnerProps) {
             </option>
           ))}
         </select>
-        <select value={namespace} onChange={(event) => setNamespace(event.target.value)} disabled={!namespaces.length}>
+        <select
+          value={namespace}
+          onChange={(event) => setNamespace(event.target.value)}
+          disabled={!namespaces.length}
+        >
           {namespaces.map((ns) => (
             <option key={ns} value={ns}>
               {ns}
@@ -98,7 +104,9 @@ function SqlRunner({ onLog }: SqlRunnerProps) {
       />
       <div className="sql-results">
         {!result && <p className="connection-status">Nenhum resultado ainda.</p>}
-        {result && result.rows.length === 0 && <p className="connection-status">Consulta executada, sem linhas retornadas.</p>}
+        {result && result.rows.length === 0 && (
+          <p className="connection-status">Consulta executada, sem linhas retornadas.</p>
+        )}
         {result && result.rows.length > 0 && (
           <table>
             <thead>

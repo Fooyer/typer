@@ -80,13 +80,20 @@ function ApiTester({ connectionId, namespace, docName, sourceContent, onLog }: A
               : "",
           );
         } else {
-          setBasePathStatus("Não encontrado automaticamente — informe o caminho da aplicação manualmente.");
+          setBasePathStatus(
+            "Não encontrado automaticamente — informe o caminho da aplicação manualmente.",
+          );
         }
       })
       .catch((error) => {
         if (cancelled) return;
-        setBasePathStatus("Não encontrado automaticamente — informe o caminho da aplicação manualmente.");
-        onLog(`Não foi possível resolver o caminho da aplicação: ${(error as Error).message}`, "error");
+        setBasePathStatus(
+          "Não encontrado automaticamente — informe o caminho da aplicação manualmente.",
+        );
+        onLog(
+          `Não foi possível resolver o caminho da aplicação: ${(error as Error).message}`,
+          "error",
+        );
       });
     return () => {
       cancelled = true;
@@ -119,7 +126,10 @@ function ApiTester({ connectionId, namespace, docName, sourceContent, onLog }: A
       );
       setResponse(result);
       const ok = result.status >= 200 && result.status < 300;
-      onLog(`${method} ${fullPath} → ${result.status} ${result.statusText} (${result.durationMs} ms)`, ok ? "success" : "error");
+      onLog(
+        `${method} ${fullPath} → ${result.status} ${result.statusText} (${result.durationMs} ms)`,
+        ok ? "success" : "error",
+      );
     } catch (error) {
       setResponseError((error as Error).message);
       onLog(`Erro ao chamar API: ${(error as Error).message}`, "error");
@@ -156,7 +166,11 @@ function ApiTester({ connectionId, namespace, docName, sourceContent, onLog }: A
               ))}
             </select>
           ) : (
-            <input value={basePath} onChange={(event) => setBasePath(event.target.value)} placeholder="/csp/user/minhaapp/" />
+            <input
+              value={basePath}
+              onChange={(event) => setBasePath(event.target.value)}
+              placeholder="/csp/user/minhaapp/"
+            />
           )}
         </label>
         {basePathStatus && <p className="connection-status">{basePathStatus}</p>}
@@ -171,7 +185,9 @@ function ApiTester({ connectionId, namespace, docName, sourceContent, onLog }: A
                 onClick={() => selectRoute(route, index)}
                 title={route.call ? `Call: ${route.call}` : undefined}
               >
-                <span className={`api-route-method api-route-method-${route.method.toLowerCase()}`}>{route.method}</span>
+                <span className={`api-route-method api-route-method-${route.method.toLowerCase()}`}>
+                  {route.method}
+                </span>
                 <span className="api-route-url">{route.url}</span>
               </li>
             ))}
@@ -215,7 +231,9 @@ function ApiTester({ connectionId, namespace, docName, sourceContent, onLog }: A
               className="api-tester-body"
               value={bodyText}
               onChange={(event) => setBodyText(event.target.value)}
-              placeholder={method === "GET" || method === "HEAD" ? "(ignorado para " + method + ")" : "{}"}
+              placeholder={
+                method === "GET" || method === "HEAD" ? "(ignorado para " + method + ")" : "{}"
+              }
               spellCheck={false}
             />
           </label>
@@ -225,13 +243,23 @@ function ApiTester({ connectionId, namespace, docName, sourceContent, onLog }: A
           {response && (
             <>
               <div className="api-response-status">
-                <span className={response.status >= 200 && response.status < 300 ? "output-line-success" : "output-line-error"}>
+                <span
+                  className={
+                    response.status >= 200 && response.status < 300
+                      ? "output-line-success"
+                      : "output-line-error"
+                  }
+                >
                   {response.status} {response.statusText}
                 </span>
                 <span className="api-response-duration">{response.durationMs} ms</span>
                 {jsonBody && (
                   <label className="search-case-toggle">
-                    <input type="checkbox" checked={prettyJson} onChange={(event) => setPrettyJson(event.target.checked)} />
+                    <input
+                      type="checkbox"
+                      checked={prettyJson}
+                      onChange={(event) => setPrettyJson(event.target.checked)}
+                    />
                     JSON formatado
                   </label>
                 )}
@@ -239,7 +267,9 @@ function ApiTester({ connectionId, namespace, docName, sourceContent, onLog }: A
               <pre className="api-response-body">{displayBody}</pre>
             </>
           )}
-          {!response && !responseError && <p className="connection-status">Nenhuma resposta ainda.</p>}
+          {!response && !responseError && (
+            <p className="connection-status">Nenhuma resposta ainda.</p>
+          )}
         </div>
       </div>
     </div>

@@ -53,7 +53,11 @@ const LIGHT_DEFAULTS: Record<string, string> = {
 };
 
 /** Reads the first key present in the theme's own colors, then the first present in the built-in default table for `kind`. */
-function pick(colors: Record<string, string>, kind: "dark" | "light", ...keys: string[]): string | undefined {
+function pick(
+  colors: Record<string, string>,
+  kind: "dark" | "light",
+  ...keys: string[]
+): string | undefined {
   for (const key of keys) if (colors[key]) return colors[key];
   const defaults = kind === "dark" ? DARK_DEFAULTS : LIGHT_DEFAULTS;
   for (const key of keys) if (defaults[key]) return defaults[key];
@@ -74,12 +78,18 @@ function resolveTokenStyle(
   let best: { foreground?: string; fontStyle?: string; specificity: number } | undefined;
   for (const entry of tokenColors) {
     if (!entry.scope) continue;
-    const scopes = Array.isArray(entry.scope) ? entry.scope : entry.scope.split(",").map((s) => s.trim());
+    const scopes = Array.isArray(entry.scope)
+      ? entry.scope
+      : entry.scope.split(",").map((s) => s.trim());
     for (const scope of scopes) {
       for (const candidate of candidates) {
         if (scope !== candidate && !candidate.startsWith(`${scope}.`)) continue;
         if (best && scope.length <= best.specificity) continue;
-        best = { foreground: entry.settings.foreground, fontStyle: entry.settings.fontStyle, specificity: scope.length };
+        best = {
+          foreground: entry.settings.foreground,
+          fontStyle: entry.settings.fontStyle,
+          specificity: scope.length,
+        };
       }
     }
   }
@@ -93,13 +103,24 @@ export function applyAppChrome(theme: AppTheme) {
 
   const bg = pick(colors, kind, "editor.background")!;
   const fg = pick(colors, kind, "editor.foreground")!;
-  const textHeading = pick(colors, kind, "foreground", "sideBarTitle.foreground", "editor.foreground")!;
+  const textHeading = pick(
+    colors,
+    kind,
+    "foreground",
+    "sideBarTitle.foreground",
+    "editor.foreground",
+  )!;
   const border = pick(colors, kind, "panel.border", "editorGroup.border")!;
   const accent = pick(colors, kind, "focusBorder", "activityBarBadge.background")!;
   const bgSidebar = pick(colors, kind, "sideBar.background")!;
   const textSidebar = pick(colors, kind, "sideBar.foreground", "foreground", "editor.foreground")!;
   const bgTabActive = pick(colors, kind, "tab.activeBackground", "editor.background")!;
-  const bgTabInactive = pick(colors, kind, "tab.inactiveBackground", "editorGroupHeader.tabsBackground")!;
+  const bgTabInactive = pick(
+    colors,
+    kind,
+    "tab.inactiveBackground",
+    "editorGroupHeader.tabsBackground",
+  )!;
   const textTabActive = pick(colors, kind, "tab.activeForeground", "editor.foreground")!;
   const textTabInactive = pick(colors, kind, "tab.inactiveForeground")!;
   const bgHover = pick(colors, kind, "list.hoverBackground")!;
@@ -113,23 +134,38 @@ export function applyAppChrome(theme: AppTheme) {
   // back to another theme's literal hover color would clash with this theme's own palette, so derive
   // it from this theme's own button color instead.
   const bgButtonHover =
-    colors["button.hoverBackground"] ?? `color-mix(in srgb, ${bgButton} 85%, ${kind === "dark" ? "white" : "black"} 15%)`;
+    colors["button.hoverBackground"] ??
+    `color-mix(in srgb, ${bgButton} 85%, ${kind === "dark" ? "white" : "black"} 15%)`;
   const bgDropdown = pick(colors, kind, "dropdown.background", "input.background")!;
-  const bgMenu = pick(colors, kind, "menu.background", "dropdown.background", "sideBar.background")!;
+  const bgMenu = pick(
+    colors,
+    kind,
+    "menu.background",
+    "dropdown.background",
+    "sideBar.background",
+  )!;
   const textMenu = pick(colors, kind, "menu.foreground", "editor.foreground")!;
   const borderMenu = colors["menu.border"] ?? border;
   const bgBadge = pick(colors, kind, "badge.background")!;
   const textBadge = pick(colors, kind, "badge.foreground")!;
-  const colorError = pick(colors, kind, "errorForeground", "editorError.foreground") ?? (kind === "dark" ? "#f87171" : "#dc2626");
+  const colorError =
+    pick(colors, kind, "errorForeground", "editorError.foreground") ??
+    (kind === "dark" ? "#f87171" : "#dc2626");
 
   // list.activeSelectionBackground / menu.selectionBackground / scrollbar colors are highly
   // theme-specific with no reliable universal default, so derive them from the theme's own accent
   // and background instead of guessing a fixed hex.
-  const bgSelection = colors["list.activeSelectionBackground"] ?? `color-mix(in srgb, ${accent} 30%, ${bgSidebar})`;
+  const bgSelection =
+    colors["list.activeSelectionBackground"] ?? `color-mix(in srgb, ${accent} 30%, ${bgSidebar})`;
   const bgMenuSelection = colors["menu.selectionBackground"] ?? bgSelection;
-  const bgScrollbar = colors["scrollbarSlider.background"] ?? `color-mix(in srgb, ${fg} 25%, transparent)`;
-  const bgScrollbarHover = colors["scrollbarSlider.hoverBackground"] ?? `color-mix(in srgb, ${fg} 40%, transparent)`;
-  const colorSuccess = colors["terminal.ansiGreen"] ?? colors["gitDecoration.addedResourceForeground"] ?? (kind === "dark" ? "#4ade80" : "#16a34a");
+  const bgScrollbar =
+    colors["scrollbarSlider.background"] ?? `color-mix(in srgb, ${fg} 25%, transparent)`;
+  const bgScrollbarHover =
+    colors["scrollbarSlider.hoverBackground"] ?? `color-mix(in srgb, ${fg} 40%, transparent)`;
+  const colorSuccess =
+    colors["terminal.ansiGreen"] ??
+    colors["gitDecoration.addedResourceForeground"] ??
+    (kind === "dark" ? "#4ade80" : "#16a34a");
 
   // Reuse the theme's own editor coloring for method-parameter declarations (via TextMate rules,
   // not the `colors` map) so the parameter-usage decoration matches it exactly instead of picking
@@ -147,7 +183,10 @@ export function applyAppChrome(theme: AppTheme) {
   root.setProperty("--bg", bg);
   root.setProperty("--text", fg);
   root.setProperty("--text-h", textHeading);
-  root.setProperty("--bg-titlebar", pick(colors, kind, "titleBar.activeBackground", "sideBar.background")!);
+  root.setProperty(
+    "--bg-titlebar",
+    pick(colors, kind, "titleBar.activeBackground", "sideBar.background")!,
+  );
   root.setProperty("--border", border);
   root.setProperty("--accent", accent);
 
