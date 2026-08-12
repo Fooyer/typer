@@ -17,7 +17,7 @@ export type TreeNode = TreeFolder | TreeFile;
 
 /** Classes are packaged via dot segments (Demo.Utils.Helper.cls -> Demo/Utils/Helper.cls); CSP files use real
  * "/" paths; routines (.mac/.int/.inc) have no InterSystems-defined nesting, so they stay flat. */
-function splitSegments(docName: string): string[] {
+export function splitSegments(docName: string): string[] {
   if (docName.toLowerCase().endsWith(".cls")) {
     const withoutExt = docName.slice(0, -4);
     const parts = withoutExt.split(".");
@@ -87,4 +87,57 @@ function sortTree(folder: TreeFolder) {
   for (const child of folder.children) {
     if (child.type === "folder") sortTree(child);
   }
+}
+
+/** Recursively gathers every file leaf under a node (a single file yields itself). */
+export function collectFiles(node: TreeNode, out: TreeFile[] = []): TreeFile[] {
+  if (node.type === "file") out.push(node);
+  else for (const child of node.children) collectFiles(child, out);
+  return out;
+}
+
+/** A file can be dragged into/out of package folders only if its name actually carries the kind of
+ * nesting a folder represents (dot-segmented class, or a real "/" path) — flat routines have no
+ * package concept, so there's nowhere to move them to. */
+export function canReparent(node: TreeNode): boolean {
+  if (node.type === "folder") return true;
+  return node.docName.toLowerCase().endsWith(".cls") || node.docName.includes("/");
+}
+
+function pathSegments(path: string): string[] {
+  return path ? path.split(".") : [];
+}
+
+/** The dot-joined parent path of a doc's immediate containing folder — matches the `path` convention
+ * used for TreeFolder nodes (see buildDocumentTree), regardless of the doc's own separator style. */
+export function docParentPath(docName: string): string {
+  return splitSegments(docName).slice(0, -1).join(".");
+}
+
+/** The dot-joined path of a folder's own parent (empty string if it's already top-level). */
+export function parentPath(path: string): string {
+  const segments = pathSegments(path);
+  segments.pop();
+  return segments.join(".");
+}
+
+/** Rebuilds a doc name as if the segment chain it currently sits under (`oldPrefixPath`) were replaced
+ * by `newPrefixPath`, preserving whatever comes after and the doc's own segment separator (dots for
+ * classes, "/" for CSP paths). Used for both renaming a folder in place and drag-and-drop moves —
+ * both are just "swap this leading prefix for that one" on every file underneath. */
+export function rehomeDocName(
+  docName: string,
+  oldPrefixPath: string,
+  newPrefixPath: string,
+): string {
+  const segments = splitSegments(docName);
+  const oldPrefixSegments = pathSegments(oldPrefixPath);
+  const relative = segments.slice(oldPrefixSegments.length);
+  const newSegments = [...pathSegments(newPrefixPath), ...relative];
+  const separator = docName.toLowerCase().endsWith(".cls")
+    ? "."
+    : docName.includes("/")
+      ? "/"
+      : ".";
+  return newSegments.join(separator);
 }

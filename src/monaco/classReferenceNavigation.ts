@@ -1,5 +1,5 @@
 import type * as Monaco from "monaco-editor";
-import { OBJECTSCRIPT_LANGUAGE_ID } from "./objectscript-language";
+import { OBJECTSCRIPT_LANGUAGE_IDS } from "./objectscript-language";
 
 const CLASS_REFERENCE_SCHEME = "objectscript-class";
 
@@ -45,7 +45,7 @@ export function registerObjectScriptDefinition(monaco: typeof Monaco): void {
   if (registered) return;
   registered = true;
 
-  monaco.languages.registerDefinitionProvider(OBJECTSCRIPT_LANGUAGE_ID, {
+  monaco.languages.registerDefinitionProvider(OBJECTSCRIPT_LANGUAGE_IDS, {
     provideDefinition(model, position) {
       const className = extractClassNameAt(model, position);
       if (!className) return null;

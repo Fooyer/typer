@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ConnectionProfile } from "../../electron/connections";
 import type { AtelierDocNameEntry } from "../../electron/atelier";
 import {
   buildDocumentTree,
+  collectFiles,
+  docParentPath,
+  parentPath,
+  rehomeDocName,
   collectClassFiles,
   type TreeFile,
   type TreeFolder,
@@ -13,7 +17,7 @@ import { matchesGlob } from "../utils/glob";
 import { classSourceToExportXml, combineExportXml } from "../utils/classXmlExport";
 import { mapWithConcurrency } from "../utils/concurrency";
 import { setKnownClasses } from "../monaco/classIndex";
-import FileExplorer from "./FileExplorer";
+import FileExplorer, { type FileExplorerHandle } from "./FileExplorer";
 import SidebarSection from "./SidebarSection";
 import type { LogLevel } from "./OutputPanel";
 
@@ -82,13 +86,8 @@ function ConnectionsPanel({
   } | null>(null);
   const [newClassDialogOpen, setNewClassDialogOpen] = useState(false);
   const [newClassName, setNewClassName] = useState("");
-  const [renameTarget, setRenameTarget] = useState<{
-    docName: string;
-    prefix: string;
-    ext: string;
-    value: string;
-  } | null>(null);
   const [connectingTo, setConnectingTo] = useState<string | null>(null);
+  const fileExplorerRef = useRef<FileExplorerHandle>(null);
   const [confirmRequest, setConfirmRequest] = useState<{
     message: string;
     confirmLabel?: string;
@@ -272,22 +271,17 @@ function ConnectionsPanel({
     setContextMenu({ x, y, node, selectedNodes });
   }
 
-  function openRenameDialog(node: TreeFile) {
+  function requestRename(node: TreeNode) {
     setContextMenu(null);
-    const prefix = node.docName.slice(0, node.docName.length - node.name.length);
-    const ext = node.name.includes(".") ? node.name.slice(node.name.lastIndexOf(".") + 1) : "";
-    setRenameTarget({ docName: node.docName, prefix, ext, value: node.name });
+    fileExplorerRef.current?.startRename(node);
   }
 
-  async function submitRename() {
-    if (!activeId || !activeNamespace || !renameTarget) return;
-    const { docName: oldDocName, prefix, ext, value } = renameTarget;
-    let newLeaf = value.trim();
-    if (ext && !newLeaf.toLowerCase().endsWith(`.${ext.toLowerCase()}`))
-      newLeaf = `${newLeaf}.${ext}`;
-    const newDocName = `${prefix}${newLeaf}`;
-    setRenameTarget(null);
-    if (newDocName === oldDocName || !newLeaf) return;
+  /** Renames a single document on the server (get → fix Class decl line if present → save →
+   * compile → delete old). Shared by leaf renames (F2 on a file) and every file swept up by a
+   * folder rename or a drag-and-drop move — those are just this, run once per affected file. */
+  async function renameOneDocument(oldDocName: string, newDocName: string): Promise<boolean> {
+    if (!activeId || !activeNamespace) return false;
+    if (newDocName === oldDocName) return true;
     if (newDocName.toLowerCase() === oldDocName.toLowerCase()) {
       // IRIS resolves class/routine names case-insensitively, so "renaming" to a name that only
       // differs in letter case doesn't create a separate document — the save silently lands back
@@ -298,7 +292,7 @@ function ConnectionsPanel({
         `Não é possível renomear "${oldDocName}" para "${newDocName}": o IRIS não diferencia maiúsculas de minúsculas em nomes de classes/rotinas, então isso não conta como um nome novo. Escolha um nome que difira em mais que a capitalização.`,
         "error",
       );
-      return;
+      return false;
     }
     onLog(`Renomeando ${oldDocName} para ${newDocName}…`);
     try {
@@ -308,7 +302,7 @@ function ConnectionsPanel({
         oldDocName,
       );
       let lines = doc.content;
-      if (ext.toLowerCase() === "cls") {
+      if (oldDocName.toLowerCase().endsWith(".cls")) {
         const oldFullName = oldDocName.replace(/\.cls$/i, "");
         const newFullName = newDocName.replace(/\.cls$/i, "");
         const declIndex = lines.findIndex((line) => /^\s*Class\s+/i.test(line));
@@ -326,11 +320,71 @@ function ConnectionsPanel({
       ]);
       output.forEach((line) => onLog(line, "info"));
       await window.electronAPI.atelier.deleteDocument(activeId, activeNamespace, oldDocName);
-      await loadDocuments(activeId, activeNamespace);
       onDocumentRenamed?.(activeId, activeNamespace, oldDocName, newDocName);
       onLog(`${oldDocName} renomeado para ${newDocName}.`, "success");
+      return true;
     } catch (error) {
       onLog(`Erro ao renomear ${oldDocName}: ${(error as Error).message}`, "error");
+      return false;
+    }
+  }
+
+  /** Renames every file under a moved/renamed folder, then reloads the tree once at the end. */
+  async function renameBatch(pairs: { oldDocName: string; newDocName: string }[], label: string) {
+    if (!activeId || !activeNamespace) return;
+    const toRename = pairs.filter((pair) => pair.oldDocName !== pair.newDocName);
+    if (toRename.length === 0) return;
+    onLog(`Movendo ${label}: ${toRename.length} arquivo(s)…`);
+    let okCount = 0;
+    for (const { oldDocName, newDocName } of toRename) {
+      if (await renameOneDocument(oldDocName, newDocName)) okCount++;
+    }
+    await loadDocuments(activeId, activeNamespace);
+    onLog(
+      `${label}: ${okCount}/${toRename.length} arquivo(s) movido(s).`,
+      okCount === toRename.length ? "success" : "error",
+    );
+  }
+
+  async function handleRename(node: TreeNode, newValue: string) {
+    if (!activeId || !activeNamespace) return;
+    if (node.type === "file") {
+      const ext = node.name.includes(".") ? node.name.slice(node.name.lastIndexOf(".") + 1) : "";
+      let newLeaf = newValue;
+      if (ext && !newLeaf.toLowerCase().endsWith(`.${ext.toLowerCase()}`))
+        newLeaf = `${newLeaf}.${ext}`;
+      const prefix = node.docName.slice(0, node.docName.length - node.name.length);
+      const newDocName = `${prefix}${newLeaf}`;
+      if (await renameOneDocument(node.docName, newDocName))
+        await loadDocuments(activeId, activeNamespace);
+    } else {
+      const parent = parentPath(node.path);
+      const newFolderPath = parent ? `${parent}.${newValue}` : newValue;
+      const pairs = collectFiles(node).map((file) => ({
+        oldDocName: file.docName,
+        newDocName: rehomeDocName(file.docName, node.path, newFolderPath),
+      }));
+      await renameBatch(pairs, `pasta "${node.name}"`);
+    }
+  }
+
+  async function handleMove(source: TreeNode, target: TreeFolder | null) {
+    if (!activeId || !activeNamespace) return;
+    if (source.type === "folder") {
+      const newFolderPath = target ? `${target.path}.${source.name}` : source.name;
+      if (newFolderPath === source.path) return;
+      const pairs = collectFiles(source).map((file) => ({
+        oldDocName: file.docName,
+        newDocName: rehomeDocName(file.docName, source.path, newFolderPath),
+      }));
+      await renameBatch(pairs, `pasta "${source.name}"`);
+    } else {
+      const oldPrefixPath = docParentPath(source.docName);
+      const newPrefixPath = target ? target.path : "";
+      if (newPrefixPath === oldPrefixPath) return;
+      const newDocName = rehomeDocName(source.docName, oldPrefixPath, newPrefixPath);
+      if (await renameOneDocument(source.docName, newDocName))
+        await loadDocuments(activeId, activeNamespace);
     }
   }
 
@@ -450,9 +504,12 @@ function ConnectionsPanel({
               Mostrar arquivos do sistema (Ens*, CSPX, .mac, .inc)
             </label>
             <FileExplorer
+              ref={fileExplorerRef}
               nodes={documentTree}
               onOpenFile={openDocument}
               onNodeContextMenu={handleNodeContextMenu}
+              onRename={handleRename}
+              onMove={handleMove}
             />
           </div>
         )}
@@ -599,12 +656,15 @@ function ConnectionsPanel({
               const folder = contextMenu.node as TreeFolder;
               return (
                 <>
-                  <li onClick={() => openNewClassDialog(`${folder.path}.`)}>
-                    🧩 Nova Classe aqui…
-                  </li>
-                  <li onClick={() => void exportNodesAsXml([folder])}>
-                    📤 Exportar pasta como XML…
-                  </li>
+                  <>
+                    <li onClick={() => openNewClassDialog(`${folder.path}.`)}>
+                      🧩 Nova Classe aqui…
+                    </li>
+                    <li onClick={() => requestRename(folder)}>✎ Renomear…</li>
+                    <li onClick={() => void exportNodesAsXml([folder])}>
+                      📤 Exportar pasta como XML…
+                    </li>
+                  </>
                 </>
               );
             })()}
@@ -614,7 +674,7 @@ function ConnectionsPanel({
               const file = contextMenu.node as TreeFile;
               return (
                 <>
-                  <li onClick={() => openRenameDialog(file)}>✎ Renomear…</li>
+                  <li onClick={() => requestRename(file)}>✎ Renomear…</li>
                   {file.docName.toLowerCase().endsWith(".cls") && (
                     <li onClick={() => void exportNodesAsXml([file])}>📤 Exportar como XML…</li>
                   )}
@@ -659,21 +719,23 @@ function ConnectionsPanel({
         </div>
       )}
 
-      {renameTarget && (
-        <div className="modal-overlay" onClick={() => setRenameTarget(null)}>
+      {connectingTo && (
+        <div className="connecting-overlay">
+          <div className="connecting-spinner" />
+          <div className="connecting-message">Conectando ao servidor {connectingTo}…</div>
+        </div>
+      )}
+
+      {confirmRequest && (
+        <div className="modal-overlay" onClick={() => setConfirmRequest(null)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <h4>Renomear</h4>
-            <input
-              autoFocus
-              value={renameTarget.value}
-              onChange={(event) => setRenameTarget({ ...renameTarget, value: event.target.value })}
-              onKeyDown={(event) => event.key === "Enter" && submitRename()}
-            />
+            <h4>Confirmar</h4>
+            <p>{confirmRequest.message}</p>
             <div className="modal-actions">
-              <button type="button" onClick={submitRename}>
-                Renomear
+              <button type="button" onClick={confirmRequest.onConfirm}>
+                {confirmRequest.confirmLabel ?? "Confirmar"}
               </button>
-              <button type="button" onClick={() => setRenameTarget(null)}>
+              <button type="button" onClick={() => setConfirmRequest(null)}>
                 Cancelar
               </button>
             </div>

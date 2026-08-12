@@ -114,7 +114,14 @@ export function computeParameterUsageDecorations(
     const bodyEnd = findBodyEnd(lines, bodyStart.line, bodyStart.col);
     if (!bodyEnd) continue;
 
-    const wordPattern = new RegExp(`\\b(?:${paramNames.map(escapeRegExp).join("|")})\\b`, "g");
+    // `_` is ObjectScript's string-concatenation operator, not an identifier character, but JS
+    // regex treats it as a \w char, so `\b` fails to break at `_name_`. Use explicit
+    // letter/digit lookarounds instead so concatenation-adjacent usages still get highlighted.
+    const idChar = "\\p{L}\\p{N}";
+    const wordPattern = new RegExp(
+      `(?<![${idChar}])(?:${paramNames.map(escapeRegExp).join("|")})(?![${idChar}])`,
+      "gu",
+    );
     for (let line2 = bodyStart.line; line2 <= bodyEnd.line; line2++) {
       const text = lines[line2];
       const from = line2 === bodyStart.line ? bodyStart.col : 0;

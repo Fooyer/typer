@@ -1,5 +1,5 @@
 import type * as Monaco from "monaco-editor";
-import { OBJECTSCRIPT_LANGUAGE_ID } from "./objectscript-language";
+import { OBJECTSCRIPT_LANGUAGE_IDS } from "./objectscript-language";
 
 interface WordDoc {
   name: string;
@@ -271,7 +271,7 @@ export function registerObjectScriptHover(monaco: typeof Monaco): void {
   if (registered) return;
   registered = true;
 
-  monaco.languages.registerHoverProvider(OBJECTSCRIPT_LANGUAGE_ID, {
+  monaco.languages.registerHoverProvider(OBJECTSCRIPT_LANGUAGE_IDS, {
     provideHover(model, position) {
       const word = model.getWordAtPosition(position);
       if (!word) return null;
