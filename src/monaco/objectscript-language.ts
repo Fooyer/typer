@@ -20,12 +20,20 @@ const LANGUAGE_ID_BY_EXTENSION: Record<string, string> = {
   ".inc": OBJECTSCRIPT_MACROS_LANGUAGE_ID,
   ".mac": OBJECTSCRIPT_LANGUAGE_ID,
   ".int": OBJECTSCRIPT_LANGUAGE_ID,
+  // Non-ObjectScript file kinds this editor also opens (Specs tab notes, etc.) — Monaco ships
+  // tokenizers for these out of the box (see editor.main.js's language registrations), so there's
+  // no reason to let them fall through to the ObjectScript grammar below like an unknown extension
+  // would.
+  ".md": "markdown",
+  ".json": "json",
+  ".txt": "plaintext",
 };
 
-/** Picks the Monaco language id for a file name by extension — each maps to a differently-scoped
- * TextMate grammar (see textmate/grammars.ts) since a .cls class body and a .mac/.int routine body
- * have different top-level syntax. Unrecognized extensions fall back to the routine grammar, which
- * is the more permissive of the two (a bare code body, no Class/Method wrapper required). */
+/** Picks the Monaco language id for a file name by extension — each ObjectScript extension maps to
+ * a differently-scoped TextMate grammar (see textmate/grammars.ts) since a .cls class body and a
+ * .mac/.int routine body have different top-level syntax. Unrecognized extensions fall back to the
+ * routine grammar, which is the more permissive of the two (a bare code body, no Class/Method
+ * wrapper required). */
 export function getObjectScriptLanguageId(fileName: string): string {
   const dot = fileName.lastIndexOf(".");
   const extension = dot >= 0 ? fileName.slice(dot).toLowerCase() : "";

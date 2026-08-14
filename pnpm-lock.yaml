@@ -222,6 +222,12 @@ importers:
       diff:
         specifier: ^9.0.0
         version: 9.0.0
+      dompurify:
+        specifier: ^3.4.8
+        version: 3.4.8
+      marked:
+        specifier: ^14.0.0
+        version: 14.0.0
       monaco-editor:
         specifier: ^0.56.0
         version: 0.56.0

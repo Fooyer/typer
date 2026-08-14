@@ -1,8 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import crypto from "node:crypto";
+import path from "node:path";
 import * as Diff from "diff";
 import * as atelier from "./atelier";
 import type { AtelierConnectionConfig } from "./atelier";
+import * as specs from "./specs";
 import type { WebContents } from "electron";
 
 /**
@@ -20,12 +22,13 @@ interface Session {
   config: AtelierConnectionConfig;
   sender: WebContents;
   runId: string;
+  specsDir: string;
 }
 
 /** `approved` is the human's decision; `saved` is whether it actually landed on the server —
  * kept separate so a network/compile failure *after* approval isn't reported to the agent as the
  * user having rejected the change, which it didn't. */
-interface WriteResolution {
+export interface WriteResolution {
   approved: boolean;
   saved: boolean;
   compileOutput?: string[];
@@ -68,10 +71,11 @@ export async function registerSession(
   config: AtelierConnectionConfig,
   sender: WebContents,
   runId: string,
+  specsDir: string,
 ): Promise<{ port: number; token: string }> {
   const port = await ensureServer();
   const token = crypto.randomUUID();
-  sessions.set(token, { token, connectionId, namespace, config, sender, runId });
+  sessions.set(token, { token, connectionId, namespace, config, sender, runId, specsDir });
   return { port, token };
 }
 
@@ -90,23 +94,38 @@ export function endSession(token: string): void {
   }
 }
 
-export async function resolvePendingWrite(pendingId: string, approved: boolean): Promise<void> {
+// Returns the resolution (not just void) so the renderer can tell a real save from a compile
+// failure and react accordingly — e.g. only refreshing the explorer/editor when the write actually
+// landed on the server, instead of assuming success just because the user clicked "approve".
+export async function resolvePendingWrite(
+  pendingId: string,
+  approved: boolean,
+): Promise<WriteResolution | null> {
   const pending = pendingWrites.get(pendingId);
-  if (!pending) return;
+  if (!pending) return null;
   pendingWrites.delete(pendingId);
   if (!approved) {
-    pending.settle({ approved: false, saved: false });
-    return;
+    const result: WriteResolution = { approved: false, saved: false };
+    pending.settle(result);
+    return result;
   }
   try {
     const { session, name, content } = pending;
     await atelier.saveDocument(session.config, session.namespace, name, content.split("\n"));
     const compileOutput = await atelier.compileDocuments(session.config, session.namespace, [name]);
-    pending.settle({ approved: true, saved: true, compileOutput });
+    const result: WriteResolution = { approved: true, saved: true, compileOutput };
+    pending.settle(result);
+    return result;
   } catch (error) {
     // The human said yes — a failure here is a save/compile problem, not a rejection, so the
     // agent needs to know its change did NOT land rather than being told the user said no.
-    pending.settle({ approved: true, saved: false, error: (error as Error).message });
+    const result: WriteResolution = {
+      approved: true,
+      saved: false,
+      error: (error as Error).message,
+    };
+    pending.settle(result);
+    return result;
   }
 }
 
@@ -170,6 +189,27 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const name = decodeURIComponent(url.pathname.slice("/documents/".length));
       const doc = await atelier.getDocument(session.config, session.namespace, name);
       respondJson(res, 200, { content: doc.content.join("\n") });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/specs") {
+      const files = await specs.listSpecFiles(session.specsDir);
+      respondJson(
+        res,
+        200,
+        files.map((file) => file.name),
+      );
+      return;
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/specs/")) {
+      const name = decodeURIComponent(url.pathname.slice("/specs/".length));
+      // The spec directory is intentionally flat (see specs.ts) — reject anything that could climb
+      // out of it instead of trusting the agent to only ever ask for names it was given.
+      if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+        respondJson(res, 400, { error: "Nome de spec inválido." });
+        return;
+      }
+      const content = await specs.readSpecFile(path.join(session.specsDir, name));
+      respondJson(res, 200, { content });
       return;
     }
     if (req.method === "GET" && url.pathname === "/search") {

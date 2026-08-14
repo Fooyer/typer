@@ -3,9 +3,9 @@ import { promises as fs } from "node:fs";
 import * as connections from "./connections";
 import * as atelier from "./atelier";
 import { openStudioCspWindow } from "./studioCspWindow";
-import { defaultAgentWorkingDirectory, openExternalTerminal } from "./externalTerminal";
 import { abortAgentRun, runAgent } from "./agentRun";
 import { resolvePendingWrite } from "./agentBridge";
+import * as specs from "./specs";
 import type { ConnectionProfile } from "./connections";
 import type { AtelierConnectionConfig } from "./atelier";
 
@@ -267,21 +267,27 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("studio:openCspAction", async (_event, url: string) => openStudioCspWindow(url));
 
-  ipcMain.handle("terminal:openExternal", (_event, cwd?: string) => {
-    openExternalTerminal(cwd || defaultAgentWorkingDirectory());
-  });
-
   ipcMain.handle(
     "agent:run",
-    (event, connectionId: string, namespace: string, prompt: string, model?: string) => {
+    (
+      event,
+      connectionId: string,
+      namespace: string,
+      prompt: string,
+      specsDir: string,
+      model?: string,
+      sessionId?: string,
+    ) => {
       const profile = getProfileOrThrow(connectionId);
       return runAgent(
         connectionId,
         namespace,
         toAtelierConfig(profile),
         prompt,
+        specsDir,
         event.sender,
         model,
+        sessionId,
       );
     },
   );
@@ -307,5 +313,38 @@ export function registerIpcHandlers(): void {
     if (result.canceled || !result.filePath) return null;
     await fs.writeFile(result.filePath, content, "utf-8");
     return result.filePath;
+  });
+
+  ipcMain.handle(
+    "specs:resolveDir",
+    (_event, connectionId: string, namespace: string, customDir: string | null) =>
+      specs.resolveSpecsDir(connectionId, namespace, customDir),
+  );
+  ipcMain.handle("specs:list", (_event, dir: string) => specs.listSpecFiles(dir));
+  ipcMain.handle("specs:read", (_event, filePath: string) => specs.readSpecFile(filePath));
+  ipcMain.handle("specs:write", (_event, filePath: string, content: string) =>
+    specs.writeSpecFile(filePath, content),
+  );
+  ipcMain.handle("specs:create", (_event, dir: string, name: string) =>
+    specs.createSpecFile(dir, name),
+  );
+  ipcMain.handle("specs:delete", (_event, filePath: string) => specs.deleteSpecFile(filePath));
+  ipcMain.handle("specs:seedSddTemplate", (_event, dir: string) => specs.seedSddScaffold(dir));
+  ipcMain.handle("specs:rename", (_event, filePath: string, newName: string) =>
+    specs.renameSpecFile(filePath, newName),
+  );
+  ipcMain.handle("specs:chooseDirectory", async (event, currentDir?: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const options = {
+      properties: ["openDirectory", "createDirectory"] as Array<
+        "openDirectory" | "createDirectory"
+      >,
+      defaultPath: currentDir || undefined,
+    };
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
   });
 }

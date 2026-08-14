@@ -34,6 +34,9 @@ const FILE_ICONS: Record<string, string> = {
   csp: "🌐",
   csr: "🌐",
   bas: "📜",
+  md: "📝",
+  txt: "📄",
+  json: "🧾",
 };
 
 function fileIcon(name: string): string {

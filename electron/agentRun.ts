@@ -27,6 +27,10 @@ function mcpServerScript(): string {
   return path.join(process.env.APP_ROOT!, "electron", "mcp", "irisMcpServer.ts");
 }
 
+function specsMcpServerScript(): string {
+  return path.join(process.env.APP_ROOT!, "electron", "mcp", "specsMcpServer.ts");
+}
+
 /** One directory per connection+namespace holding just config, never any class/routine content —
  * opencode still needs a real directory to run in, but everything it reads or writes goes through
  * the MCP tools (see irisMcpServer.ts / agentBridge.ts), never this folder. */
@@ -56,16 +60,28 @@ async function ensureProjectDir(
           IRIS_BRIDGE_TOKEN: bridgeToken,
         },
       },
+      specs: {
+        type: "local",
+        command: ["node", "--experimental-strip-types", specsMcpServerScript()],
+        environment: {
+          IRIS_BRIDGE_PORT: String(bridgePort),
+          IRIS_BRIDGE_TOKEN: bridgeToken,
+        },
+      },
     },
     // Denies opencode's own filesystem/shell tools rather than "ask" — there's nothing legitimate
     // for it to read/write/run in this directory anyway (it's just config), so the only real tools
-    // it has are the iris_* ones, which route through the bridge's own approval gate instead of
-    // opencode's permission system.
+    // it has are the iris_*/specs_* ones, which route through the bridge's own approval gate instead
+    // of opencode's permission system.
     permission: { write: "deny", edit: "deny", bash: "deny" },
   };
   await fs.writeFile(path.join(dir, "opencode.json"), JSON.stringify(opencodeConfig, null, 2));
 
-  const agentsInstructions = `# Servidor IRIS conectado
+  const agentsInstructions = `# Servidor IRIS conectado + Specs locais
+
+Este projeto usa DUAS fontes de informação completamente separadas — nunca confunda uma com a outra:
+
+## 1. Código-fonte no servidor IRIS (ferramentas \`iris_*\`)
 
 Este projeto não tem os fontes localmente. O namespace **${namespace}** no servidor **${host}:${port}**
 é acessado inteiramente através das ferramentas MCP do servidor "iris":
@@ -79,8 +95,27 @@ Este projeto não tem os fontes localmente. O namespace **${namespace}** no serv
   \`approved: true, saved: false\` significa que o usuário disse sim mas a gravação falhou (ex:
   timeout) — pode valer a pena tentar de novo.
 
-Não use ferramentas de arquivo local (read/write/edit/bash) — esta pasta não representa o código real.
 Sempre leia um documento com \`iris_read_document\` antes de propor uma escrita nele.
+
+## 2. Specs do projeto (ferramentas \`specs_*\`)
+
+"Specs" são arquivos .md locais (planos, notas, especificações escritas pelo usuário sobre o que
+construir) — NÃO são classes/rotinas do IRIS, NÃO existem no namespace do servidor, e NÃO devem ser
+buscadas com \`iris_search\`, \`iris_list_documents\` ou \`iris_read_document\`. Elas ficam em outro
+lugar (uma pasta local, fora deste projeto) e só são acessíveis por:
+
+- \`specs_list\` — lista os nomes dos arquivos .md de spec disponíveis.
+- \`specs_read\` — lê o conteúdo de um deles pelo nome (ex: "plano.md").
+
+Sempre que o usuário mencionar "specs", "especificação", "plano" ou pedir para seguir um documento de
+planejamento do projeto, use \`specs_list\`/\`specs_read\` — nunca as ferramentas \`iris_*\`. Antes de
+atuar em uma tarefa, também vale a pena checar \`specs_list\` e ler (\`specs_read\`) as specs cujo nome
+pareça relevante para o que foi pedido — não leia todas indiscriminadamente, só as que puderem conter
+contexto útil. Se nenhuma parecer relevante, siga sem ler nenhuma.
+
+Não use ferramentas de arquivo local (read/write/edit/bash) para nada disso — este diretório de
+projeto é só configuração, tanto o código quanto as specs são acessados exclusivamente pelas
+ferramentas MCP acima.
 `;
   await fs.writeFile(path.join(dir, "AGENTS.md"), agentsInstructions);
 
@@ -98,8 +133,10 @@ export async function runAgent(
   namespace: string,
   config: AtelierConnectionConfig,
   prompt: string,
+  specsDir: string,
   sender: WebContents,
   model?: string,
+  sessionId?: string,
 ): Promise<string> {
   const runId = crypto.randomUUID();
   const { port: bridgePort, token: bridgeToken } = await agentBridge.registerSession(
@@ -108,6 +145,7 @@ export async function runAgent(
     config,
     sender,
     runId,
+    specsDir,
   );
   const dir = await ensureProjectDir(
     connectionId,
@@ -125,6 +163,11 @@ export async function runAgent(
     "--format",
     "json",
     ...(model ? ["--model", model] : []),
+    // Without this, every run starts a brand-new opencode session even for the same project dir —
+    // the whole conversation resets after a single exchange. Passing back the session id opencode
+    // handed us on a previous run in this same chat (see the sessionID-sniffing below) continues it
+    // instead, so follow-up prompts actually have the prior turns as context.
+    ...(sessionId ? ["--session", sessionId] : []),
     prompt,
   ];
   // stdin must be "ignore", not the spawn default of an open pipe — opencode blocks trying to read
@@ -135,6 +178,11 @@ export async function runAgent(
   const child = spawn(opencodeBin(), args, { stdio: ["ignore", "pipe", "pipe"] });
   activeRuns.set(runId, { child, bridgeToken });
 
+  // Every stdout line carries the session id (`{ type, timestamp, sessionID, part }` — see
+  // agentTranscript.ts), including the one opencode assigned itself when `sessionId` above was
+  // omitted. Sniffed here (not left to the renderer) so the caller can persist it before the run
+  // even finishes, letting the *next* prompt continue this same session.
+  let sessionIdSent = false;
   const forwardLines = (stream: NodeJS.ReadableStream, stderr: boolean) => {
     let buffer = "";
     stream.on("data", (chunk: Buffer) => {
@@ -144,6 +192,17 @@ export async function runAgent(
       for (const line of lines) {
         if (!line.trim()) continue;
         sender.send("agent:event", { runId, line, stderr });
+        if (!sessionIdSent && !stderr) {
+          try {
+            const parsed = JSON.parse(line) as { sessionID?: unknown };
+            if (typeof parsed.sessionID === "string" && parsed.sessionID) {
+              sessionIdSent = true;
+              sender.send("agent:session", { runId, sessionId: parsed.sessionID });
+            }
+          } catch {
+            // Not JSON (or no sessionID yet) — keep waiting for a line that has one.
+          }
+        }
       }
     });
     stream.on("end", () => {

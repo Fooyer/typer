@@ -824,14 +824,22 @@ body {
   height: 100%;
   min-height: 0;
   padding: 14px;
+  /* A faint top-down gradient instead of a flat fill gives the panel some depth without fighting
+     the active theme — it's derived from the theme's own --bg so it still looks right in both a
+     light and a dark theme instead of hardcoding a shade. */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg) 96%, white 4%) 0%,
+    var(--bg) 260px
+  );
 }
 
 .agent-panel-header {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-bottom: 8px;
+  gap: 10px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -840,68 +848,31 @@ body {
   font-size: 13px;
 }
 
-.agent-panel-sync-status {
-  flex: 1 1 auto;
+/* Fires while an approved/rejected write is still being saved/compiled in the background — the
+   review dialog itself already closed the instant the user clicked (see resolvePending), so this
+   is the only feedback that work is still happening. margin-left: auto pushes it to the header's
+   far edge now that there's no filler element next to the namespace label. */
+.agent-panel-saving-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: var(--text-sidebar);
-  opacity: 0.8;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  animation: agent-fade-in 0.15s ease;
 }
 
-.agent-pending-approval {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  padding: 8px;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-.agent-pending-approval-header {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.agent-pending-approval .agent-panel-diff-patch {
-  max-height: 60vh;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  font-size: 13px;
-}
-
-.agent-pending-approval-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.agent-pending-approval-actions button {
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-button);
-  background: var(--bg-button);
-  border: 1px solid transparent;
-  border-radius: 4px;
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-.agent-pending-approval-actions button:hover:not(:disabled) {
-  background: var(--bg-button-hover);
-}
-
-.agent-pending-approval-actions button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.agent-pending-approval-actions button.agent-panel-secondary {
-  color: var(--text-sidebar);
-  background: transparent;
-  border-color: var(--border);
+.agent-panel-saving-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-top-color: var(--accent);
+  animation: connecting-spin 0.7s linear infinite;
 }
 
 .agent-panel-error {
@@ -916,6 +887,7 @@ body {
   color: var(--agent-del);
   background: color-mix(in srgb, var(--agent-del) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--agent-del) 40%, transparent);
+  animation: agent-fade-in 0.15s ease;
 }
 
 .agent-panel-error button {
@@ -929,6 +901,25 @@ body {
   padding: 0 2px;
 }
 
+/* Main column (transcript + composer) on the left, the Histórico side tab on the right —
+   min-height: 0 here and on every flex item down this chain is what lets the transcript/drawer
+   scroll internally instead of the row overflowing the panel. */
+.agent-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+}
+
+.agent-panel-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .agent-panel-transcript {
   flex: 1 1 auto;
   min-height: 100px;
@@ -937,9 +928,10 @@ body {
   flex-direction: column;
   gap: 6px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 10px;
   background: var(--bg-sidebar);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .agent-msg {
@@ -950,8 +942,135 @@ body {
 
 .agent-msg-text {
   padding: 6px 10px;
-  white-space: pre-wrap;
+}
+
+/* The agent's replies are markdown (rendered via marked + DOMPurify — see
+   src/utils/markdown.ts), not plain text, so this styles the actual HTML it produces rather than
+   relying on white-space: pre-wrap over a raw string. */
+.agent-msg-markdown {
   word-break: break-word;
+}
+
+.agent-msg-markdown > :first-child {
+  margin-top: 0;
+}
+
+.agent-msg-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.agent-msg-markdown p {
+  margin: 0.5em 0;
+}
+
+.agent-msg-markdown h1,
+.agent-msg-markdown h2,
+.agent-msg-markdown h3,
+.agent-msg-markdown h4,
+.agent-msg-markdown h5,
+.agent-msg-markdown h6 {
+  margin: 0.9em 0 0.4em;
+  font-weight: 600;
+  color: var(--text-h);
+  line-height: 1.3;
+}
+
+.agent-msg-markdown h1 {
+  font-size: 1.3em;
+}
+.agent-msg-markdown h2 {
+  font-size: 1.18em;
+}
+.agent-msg-markdown h3 {
+  font-size: 1.08em;
+}
+.agent-msg-markdown h4,
+.agent-msg-markdown h5,
+.agent-msg-markdown h6 {
+  font-size: 1em;
+}
+
+.agent-msg-markdown ul,
+.agent-msg-markdown ol {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+}
+
+.agent-msg-markdown li {
+  margin: 0.15em 0;
+}
+
+.agent-msg-markdown li > p {
+  margin: 0.2em 0;
+}
+
+.agent-msg-markdown a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.agent-msg-markdown a:hover {
+  text-decoration: underline;
+}
+
+.agent-msg-markdown strong {
+  color: var(--text-h);
+  font-weight: 700;
+}
+
+.agent-msg-markdown code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  background: var(--bg-input);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+}
+
+.agent-msg-markdown pre {
+  margin: 0.6em 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.agent-msg-markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agent-msg-markdown blockquote {
+  margin: 0.5em 0;
+  padding: 2px 10px;
+  border-left: 3px solid var(--border);
+  color: var(--text-sidebar);
+}
+
+.agent-msg-markdown hr {
+  margin: 0.8em 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.agent-msg-markdown table {
+  margin: 0.5em 0;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.agent-msg-markdown th,
+.agent-msg-markdown td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.agent-msg-markdown th {
+  background: var(--bg-input);
+  color: var(--text-h);
 }
 
 .agent-msg-tool {
@@ -997,6 +1116,21 @@ body {
   opacity: 0.85;
 }
 
+/* A failed tool call (see errorText in agentTranscript.ts) — a red-tinted border on the whole
+   block, not just the icon, so it reads as "something broke here" even when the <details> is
+   collapsed after its first auto-opened render. */
+.agent-msg-tool-failed {
+  border-color: color-mix(in srgb, var(--agent-del) 50%, var(--border));
+}
+
+.agent-tool-error {
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--agent-del) 10%, transparent);
+  color: var(--agent-del);
+  font-size: 12px;
+}
+
 .agent-msg-raw {
   padding: 4px 10px;
   font-family: var(--mono);
@@ -1007,8 +1141,75 @@ body {
 }
 
 .agent-msg-error {
+  border-left: 2px solid var(--agent-del);
+  padding-left: 8px;
   color: var(--agent-del);
   opacity: 1;
+}
+
+/* A structured error the agent's own protocol reported (parsed as `kind: "error"` — see
+   agentTranscript.ts), as opposed to .agent-msg-error above which is just stderr noise tinted red.
+   Gets the same alert treatment as .agent-tool-error since it's a confirmed failure, not a maybe. */
+.agent-msg-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--agent-del) 40%, transparent);
+  background: color-mix(in srgb, var(--agent-del) 12%, transparent);
+  color: var(--agent-del);
+  font-size: 13px;
+}
+
+.agent-msg-alert-icon {
+  flex: 0 0 auto;
+}
+
+/* Shown between the transcript and composer while running — see currentActivity in
+   AgentPanel.tsx, which derives the label from whatever the last transcript item was (a tool
+   name/title, or "writing a reply") so this always reflects what's actually happening rather than
+   a generic "loading…" that never changes. */
+.agent-panel-loader {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-sidebar);
+  background: var(--bg-hover);
+  animation: agent-fade-in 0.15s ease;
+}
+
+.agent-panel-loader-spinner {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
+  animation: connecting-spin 0.7s linear infinite;
+}
+
+/* Replaces .agent-panel-loader once STALL_MS passes with no new event — same slot, different
+   message: instead of implying progress, it names the concern and offers the same "Parar" the
+   composer already has, since a genuinely stuck run otherwise gives no visible sign anything is
+   wrong short of the user noticing the transcript stopped scrolling. */
+.agent-panel-stalled {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--agent-del);
+  background: color-mix(in srgb, var(--agent-del) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--agent-del) 40%, transparent);
+  animation: agent-fade-in 0.15s ease;
 }
 
 .agent-panel-composer {
@@ -1028,21 +1229,39 @@ body {
   border: 1px solid var(--border-input);
   border-radius: 6px;
   padding: 8px 10px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.agent-panel-run-button {
+.agent-panel-composer textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.agent-panel-run-button,
+.agent-panel-secondary {
   flex: 0 0 auto;
   align-self: flex-end;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: #fff;
-  background: var(--accent);
-  border: 1px solid transparent;
   border-radius: 6px;
   padding: 8px 14px;
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    filter 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.05s ease;
+}
+
+.agent-panel-run-button {
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid transparent;
 }
 
 .agent-panel-run-button:hover:not(:disabled) {
@@ -1054,31 +1273,137 @@ body {
   cursor: default;
 }
 
+.agent-panel-run-button:active:not(:disabled),
+.agent-panel-secondary:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
 .agent-panel-stop-button {
   background: var(--agent-del);
 }
 
-.agent-panel-review {
-  /* flex-basis > 0 so this section always keeps a fair, usable amount of room instead of being
-     squeezed to near-nothing by the transcript above it; max-height still caps it relative to the
-     whole panel. min-height: 0 on every flex item in this chain (this, and .agent-panel-review-list
-     below) is what actually lets the list scroll internally instead of overflowing the page. */
-  flex: 1 1 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 0;
-  max-height: 45%;
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
+.agent-panel-secondary {
+  color: var(--text-sidebar);
+  background: transparent;
+  border: 1px solid var(--border);
 }
 
+.agent-panel-secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.agent-panel-new-chat-button {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-sidebar);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.agent-panel-new-chat-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-h);
+}
+
+.agent-panel-new-chat-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The Histórico rail: a slim always-visible vertical tab on the panel's right edge, plus a drawer
+   that slides out to its left when opened — instead of a section permanently docked below the
+   transcript, it now only claims screen space when the user actually wants to look at it. */
+.agent-panel-history-rail {
+  flex: 0 0 auto;
+  display: flex;
+  height: 100%;
+}
+
+.agent-panel-history-drawer {
+  width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-sidebar) 92%, black 8%);
+  transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.agent-panel-history-drawer.open {
+  width: 320px;
+}
+
+.agent-panel-history-tabstrip {
+  flex: 0 0 auto;
+  width: 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding-top: 10px;
+  background: color-mix(in srgb, var(--bg-sidebar) 92%, black 8%);
+  border-right: 1px solid var(--border);
+}
+
+.agent-panel-history-tab {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sidebar);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.agent-panel-history-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-h);
+}
+
+.agent-panel-history-tab.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.agent-panel-history-tab-icon {
+  writing-mode: horizontal-tb;
+  transform: rotate(180deg);
+}
+
+/* Only mounted while the drawer is open (see AgentPanel.tsx), so it can be a plain flex column at
+   full drawer height instead of the max-height-and-border-top treatment the old docked-below
+   section needed to share space with the transcript above it. */
 .agent-panel-review-header {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  width: 320px;
+  padding: 10px 10px 6px;
 }
 
 .agent-panel-review-header h4 {
@@ -1091,9 +1416,114 @@ body {
 .agent-panel-review-list {
   flex: 1 1 auto;
   min-height: 0;
+  width: 320px;
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
+}
+
+/* The empty-state message is a plain-flow child here (unlike the review rows below, which are
+   absolutely positioned and each carry their own horizontal padding), so without this it sits
+   flush against the drawer's edge instead of lining up with the header above it. */
+.agent-panel-review-list > .connection-status {
+  padding: 0 10px;
+}
+
+.agent-panel-history-clear {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-sidebar);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.agent-panel-history-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text-h);
+}
+
+/* Prompt history: unlike the code-changes list above, this is capped at 50 entries (see
+   promptHistory.ts) so it's a plain scrollable flow instead of needing the same
+   measure-and-virtualize treatment. */
+.agent-panel-prompt-history-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.agent-panel-prompt-history-list > .connection-status {
+  padding: 0 10px;
+}
+
+.agent-panel-prompt-history-item {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.agent-panel-prompt-history-item:hover {
+  background: var(--bg-hover);
+}
+
+.agent-panel-prompt-history-time {
+  font-size: 10px;
+  color: var(--text-sidebar);
+  opacity: 0.7;
+}
+
+.agent-panel-prompt-history-text {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Marks where consecutive prompts stop belonging to the same chat/session (see
+   promptHistory.ts's sessionId + AgentPanel's grouping) — the list is most-recent-first, so this
+   sits above the older chat's block. */
+.agent-panel-prompt-history-divider {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-sidebar);
+  opacity: 0.65;
+}
+
+.agent-panel-prompt-history-divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border);
 }
 
 /* Virtualized: rows are absolutely positioned at a precomputed `top` inside this height-only
@@ -1158,6 +1588,11 @@ body {
   opacity: 0.7;
 }
 
+.agent-panel-diff-entry-failed {
+  opacity: 0.9;
+  color: var(--agent-del);
+}
+
 .agent-panel-diff-patch {
   margin: 0;
   padding: 8px 0;
@@ -1190,6 +1625,156 @@ body {
 .agent-panel-diff-patch .diff-hunk {
   color: var(--text-sidebar);
   opacity: 0.7;
+}
+
+@keyframes agent-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes agent-dialog-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Full-screen review dialog: replaces the old inline "pending approval" banner. Approving or
+   rejecting removes the item from `pendingWrites` immediately (see resolvePending in
+   AgentPanel.tsx), which unmounts this the instant the user clicks — the save/compile itself keeps
+   running in the background and reports back via the log + the saving badge in the header, so the
+   user is never stuck staring at a dialog waiting for a network round trip. */
+.agent-review-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5vh 6vw;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  animation: agent-fade-in 0.15s ease;
+}
+
+.agent-review-dialog {
+  width: 100%;
+  height: 100%;
+  max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-menu) 97%, white 3%) 0%,
+    var(--bg-menu) 240px
+  );
+  border: 1px solid var(--border-menu);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  animation: agent-dialog-pop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.agent-review-dialog-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-review-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.agent-review-dialog-icon {
+  flex: 0 0 auto;
+  font-size: 22px;
+}
+
+.agent-review-dialog-title h3 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text-h);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-review-dialog-subtitle {
+  display: block;
+  font-size: 11px;
+  color: var(--text-sidebar);
+  opacity: 0.75;
+}
+
+.agent-review-dialog-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-badge);
+  background: var(--bg-badge);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.agent-review-dialog-diff {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  white-space: pre;
+  background: var(--bg);
+}
+
+.agent-review-dialog-diff > div {
+  padding: 1px 20px;
+}
+
+.agent-review-dialog-diff .diff-add {
+  background: color-mix(in srgb, var(--agent-add) 15%, transparent);
+  color: var(--agent-add);
+}
+
+.agent-review-dialog-diff .diff-del {
+  background: color-mix(in srgb, var(--agent-del) 15%, transparent);
+  color: var(--agent-del);
+}
+
+.agent-review-dialog-diff .diff-hunk {
+  color: var(--text-sidebar);
+  opacity: 0.7;
+}
+
+.agent-review-dialog-actions {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.agent-review-dialog-actions .agent-panel-run-button,
+.agent-review-dialog-actions .agent-panel-secondary {
+  align-self: auto;
+  padding: 9px 18px;
 }
 
 .api-tester {
@@ -1469,6 +2054,37 @@ body {
   padding: 0 4px;
 }
 
+.specs-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.specs-file-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.specs-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.specs-file-row:hover {
+  background: var(--bg-hover);
+}
+
+.specs-file-icon {
+  flex: 0 0 auto;
+}
+
 .connection-form {
   margin-bottom: 10px;
   border: 1px solid var(--border);
@@ -1694,6 +2310,7 @@ body {
   display: flex;
   min-height: 0;
   overflow: hidden;
+  animation: agent-fade-in 0.15s ease;
 }
 
 .output-panel {
@@ -1719,6 +2336,12 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.output-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .output-panel-header button {
   font: inherit;
   font-size: 11px;
@@ -1730,6 +2353,55 @@ body {
   border-radius: 4px;
   padding: 2px 6px;
   cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.output-panel-header button:hover {
+  background: var(--bg-hover);
+  color: var(--text-h);
+}
+
+.output-panel-hide {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.output-panel-hide svg {
+  flex: 0 0 auto;
+  display: block;
+}
+
+/* Replaces the output panel while it's hidden — kept at all times so reopening it is one click,
+   not a trip to the View menu or a shortcut. Mirrors .output-panel-tabs' look so it reads as "the
+   same tabs, just collapsed" rather than a different control. */
+.output-collapsed-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.output-collapsed-bar button {
+  font: inherit;
+  font-size: 11px;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  padding: 5px 14px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.output-collapsed-bar button:hover {
+  background: var(--bg-hover);
+  color: var(--text-h);
 }
 
 .output-panel-body {

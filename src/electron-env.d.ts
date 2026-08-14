@@ -10,7 +10,9 @@ import type {
   StudioMenu,
   StudioUserAction,
 } from "../electron/atelier";
-import type { AgentDone, AgentEvent, AgentPendingWrite } from "../electron/preload";
+import type { AgentDone, AgentEvent, AgentPendingWrite, AgentSession } from "../electron/preload";
+import type { WriteResolution } from "../electron/agentBridge";
+import type { SpecFileEntry } from "../electron/specs";
 
 export interface ElectronAPI {
   getVersions: () => { chrome: string; node: string; electron: string };
@@ -104,21 +106,36 @@ export interface ElectronAPI {
   files: {
     saveText: (suggestedName: string, content: string) => Promise<string | null>;
   };
-  terminal: {
-    openExternal: (cwd?: string) => Promise<void>;
-  };
   agent: {
     run: (
       connectionId: string,
       namespace: string,
       prompt: string,
+      specsDir: string,
       model?: string,
+      sessionId?: string,
     ) => Promise<string>;
     abort: (runId: string) => Promise<void>;
-    resolvePendingWrite: (pendingId: string, approved: boolean) => Promise<void>;
+    resolvePendingWrite: (pendingId: string, approved: boolean) => Promise<WriteResolution | null>;
     onEvent: (callback: (payload: AgentEvent) => void) => () => void;
     onDone: (callback: (payload: AgentDone) => void) => () => void;
+    onSession: (callback: (payload: AgentSession) => void) => () => void;
     onPendingWrite: (callback: (payload: AgentPendingWrite) => void) => () => void;
+  };
+  specs: {
+    resolveDir: (
+      connectionId: string,
+      namespace: string,
+      customDir: string | null,
+    ) => Promise<string>;
+    list: (dir: string) => Promise<SpecFileEntry[]>;
+    read: (filePath: string) => Promise<string>;
+    write: (filePath: string, content: string) => Promise<void>;
+    create: (dir: string, name: string) => Promise<string>;
+    delete: (filePath: string) => Promise<void>;
+    seedSddTemplate: (dir: string) => Promise<void>;
+    rename: (filePath: string, newName: string) => Promise<string>;
+    chooseDirectory: (currentDir?: string) => Promise<string | null>;
   };
 }
 

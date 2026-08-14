@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { ConnectionProfile } from "./connections";
+import type { WriteResolution } from "./agentBridge";
 import type {
   AtelierDocNameEntry,
   AtelierDocument,
@@ -11,6 +12,7 @@ import type {
   StudioMenu,
   StudioUserAction,
 } from "./atelier";
+import type { SpecFileEntry } from "./specs";
 
 export interface AgentEvent {
   runId: string;
@@ -28,6 +30,11 @@ export interface AgentPendingWrite {
   runId: string;
   name: string;
   patch: string;
+}
+
+export interface AgentSession {
+  runId: string;
+  sessionId: string;
 }
 
 contextBridge.exposeInMainWorld("electronAPI", {
@@ -163,18 +170,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
     saveText: (suggestedName: string, content: string): Promise<string | null> =>
       ipcRenderer.invoke("dialog:saveTextFile", suggestedName, content),
   },
-  terminal: {
-    openExternal: (cwd?: string): Promise<void> => ipcRenderer.invoke("terminal:openExternal", cwd),
-  },
   agent: {
     run: (
       connectionId: string,
       namespace: string,
       prompt: string,
+      specsDir: string,
       model?: string,
-    ): Promise<string> => ipcRenderer.invoke("agent:run", connectionId, namespace, prompt, model),
+      sessionId?: string,
+    ): Promise<string> =>
+      ipcRenderer.invoke("agent:run", connectionId, namespace, prompt, specsDir, model, sessionId),
     abort: (runId: string): Promise<void> => ipcRenderer.invoke("agent:abort", runId),
-    resolvePendingWrite: (pendingId: string, approved: boolean): Promise<void> =>
+    resolvePendingWrite: (pendingId: string, approved: boolean): Promise<WriteResolution | null> =>
       ipcRenderer.invoke("agent:resolvePendingWrite", pendingId, approved),
     onEvent: (callback: (payload: AgentEvent) => void): (() => void) => {
       const handler = (_event: unknown, payload: AgentEvent) => callback(payload);
@@ -186,10 +193,36 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.on("agent:done", handler);
       return () => ipcRenderer.removeListener("agent:done", handler);
     },
+    onSession: (callback: (payload: AgentSession) => void): (() => void) => {
+      const handler = (_event: unknown, payload: AgentSession) => callback(payload);
+      ipcRenderer.on("agent:session", handler);
+      return () => ipcRenderer.removeListener("agent:session", handler);
+    },
     onPendingWrite: (callback: (payload: AgentPendingWrite) => void): (() => void) => {
       const handler = (_event: unknown, payload: AgentPendingWrite) => callback(payload);
       ipcRenderer.on("agent:pendingWrite", handler);
       return () => ipcRenderer.removeListener("agent:pendingWrite", handler);
     },
+  },
+  specs: {
+    resolveDir: (
+      connectionId: string,
+      namespace: string,
+      customDir: string | null,
+    ): Promise<string> =>
+      ipcRenderer.invoke("specs:resolveDir", connectionId, namespace, customDir),
+    list: (dir: string): Promise<SpecFileEntry[]> => ipcRenderer.invoke("specs:list", dir),
+    read: (filePath: string): Promise<string> => ipcRenderer.invoke("specs:read", filePath),
+    write: (filePath: string, content: string): Promise<void> =>
+      ipcRenderer.invoke("specs:write", filePath, content),
+    create: (dir: string, name: string): Promise<string> =>
+      ipcRenderer.invoke("specs:create", dir, name),
+    delete: (filePath: string): Promise<void> => ipcRenderer.invoke("specs:delete", filePath),
+    seedSddTemplate: (dir: string): Promise<void> =>
+      ipcRenderer.invoke("specs:seedSddTemplate", dir),
+    rename: (filePath: string, newName: string): Promise<string> =>
+      ipcRenderer.invoke("specs:rename", filePath, newName),
+    chooseDirectory: (currentDir?: string): Promise<string | null> =>
+      ipcRenderer.invoke("specs:chooseDirectory", currentDir),
   },
 });

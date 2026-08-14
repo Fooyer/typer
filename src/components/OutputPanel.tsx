@@ -33,9 +33,17 @@ interface OutputPanelProps {
   activeTab: OutputTab;
   onActiveTabChange: (tab: OutputTab) => void;
   search: SearchPanelState;
+  onHide?: () => void;
 }
 
-function OutputPanel({ lines, onClear, activeTab, onActiveTabChange, search }: OutputPanelProps) {
+function OutputPanel({
+  lines,
+  onClear,
+  activeTab,
+  onActiveTabChange,
+  search,
+  onHide,
+}: OutputPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,11 +69,33 @@ function OutputPanel({ lines, onClear, activeTab, onActiveTabChange, search }: O
             Pesquisar{search.results.length > 0 ? ` (${search.results.length})` : ""}
           </button>
         </div>
-        {activeTab === "log" && (
-          <button type="button" onClick={onClear}>
-            Limpar
-          </button>
-        )}
+        <div className="output-panel-header-actions">
+          {activeTab === "log" && (
+            <button type="button" onClick={onClear}>
+              Limpar
+            </button>
+          )}
+          {onHide && (
+            <button
+              type="button"
+              className="output-panel-hide"
+              onClick={onHide}
+              title="Ocultar painel de saída"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                <path
+                  d="M1.5 3.5l3.5 3.5 3.5-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              Ocultar
+            </button>
+          )}
+        </div>
       </div>
       <div
         className="output-panel-body"

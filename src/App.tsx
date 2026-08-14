@@ -3,7 +3,7 @@ import * as monaco from "monaco-editor";
 import AgentPanel from "./components/AgentPanel";
 import ApiTester from "./components/ApiTester";
 import CodeEditor, { type CodeEditorHandle } from "./components/CodeEditor";
-import ConnectionsPanel from "./components/ConnectionsPanel";
+import ConnectionsPanel, { type ConnectionsPanelHandle } from "./components/ConnectionsPanel";
 import MenuBar, { type MenuDef } from "./components/MenuBar";
 import OutputPanel, { type LogLevel, type LogLine, type OutputTab } from "./components/OutputPanel";
 import QuickOpenClassModal from "./components/QuickOpenClassModal";
@@ -64,13 +64,17 @@ ClassMethod Greet(name As %String) As %String
 
 interface Tab {
   id: string;
-  kind: "code" | "sql" | "api" | "agent";
+  kind: "code" | "sql" | "api" | "agent" | "spec";
   title: string;
   content: string;
   savedContent: string;
   connectionId?: string;
   namespace?: string;
   docName?: string;
+  /** Absolute path on local disk — only set for kind "spec" (see SpecsPanel.tsx/electron/specs.ts).
+   * Specs are plain local files, not IRIS server documents, so they carry a filesystem path
+   * instead of connectionId/namespace/docName driving a save. */
+  specPath?: string;
   /** Server says this document can't be edited (deployed class, or source control checkout status)
    * — see applyReadOnlyStatus. Undefined until that async check resolves; treated as editable
    * until then, same as any tab not backed by a server document. */
@@ -127,6 +131,7 @@ function App() {
   const searchTokenRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const codeEditorRef = useRef<CodeEditorHandle>(null);
+  const connectionsPanelRef = useRef<ConnectionsPanelHandle>(null);
   const nextLogId = useRef(1);
   const nextTabId = useRef(1);
   // Read by the window-close listener below, which is registered once on mount — a ref keeps it
@@ -235,6 +240,54 @@ function App() {
           : t,
       ),
     );
+  }
+
+  function handleSpecDeleted(specPath: string) {
+    const tab = tabs.find((t) => t.kind === "spec" && t.specPath === specPath);
+    if (tab) removeTab(tab.id);
+  }
+
+  function handleSpecRenamed(oldPath: string, newPath: string, newName: string) {
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.kind === "spec" && t.specPath === oldPath
+          ? { ...t, specPath: newPath, title: newName }
+          : t,
+      ),
+    );
+  }
+
+  // Fired by AgentPanel after the agent's write actually lands on the server (approved AND saved —
+  // not just clicked "approve"). Refreshes the explorer so a newly created class shows up without a
+  // manual reload, and — if that document happens to be open in a tab — pulls the fresh content in
+  // too, the same way saveAndCompile already reloads after a manual save/compile.
+  function handleAgentDocumentSaved(connectionId: string, namespace: string, docName: string) {
+    connectionsPanelRef.current?.refreshDocuments(connectionId, namespace);
+    const tab = tabsRef.current.find(
+      (t) => t.connectionId === connectionId && t.namespace === namespace && t.docName === docName,
+    );
+    if (!tab) return;
+    if (isDirty(tab)) {
+      appendLog(
+        `${docName} foi alterado no servidor pelo agente, mas a aba aberta tem edições não salvas — salve ou descarte para ver a versão mais recente.`,
+        "info",
+      );
+      return;
+    }
+    window.electronAPI.atelier
+      .getDocument(connectionId, namespace, docName)
+      .then((doc) => {
+        const freshContent = doc.content.join("\n");
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === tab.id ? { ...t, content: freshContent, savedContent: freshContent } : t,
+          ),
+        );
+        codeEditorRef.current?.setTabContent(tab.id, freshContent);
+      })
+      .catch((error) => {
+        appendLog(`Não foi possível recarregar ${docName}: ${(error as Error).message}`, "error");
+      });
   }
 
   // Fire-and-forget: the tab is created (and shown as editable) immediately with whatever content
@@ -765,10 +818,6 @@ function App() {
     setActiveTabId(id);
   }
 
-  async function openAgentTerminal() {
-    await window.electronAPI.terminal.openExternal();
-  }
-
   function openAgentTab(connectionId: string, namespace: string) {
     const existing = tabs.find(
       (tab) =>
@@ -792,6 +841,37 @@ function App() {
       },
     ]);
     setActiveTabId(id);
+  }
+
+  function openSpecTab(specPath: string, name: string, content: string) {
+    const existing = tabs.find((tab) => tab.kind === "spec" && tab.specPath === specPath);
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    const id = `spec-${nextTabId.current++}`;
+    setTabs((prev) => [
+      ...prev,
+      { id, kind: "spec", title: name, content, savedContent: content, specPath },
+    ]);
+    setActiveTabId(id);
+  }
+
+  async function saveSpecFile() {
+    const tab = activeTab;
+    if (!tab || tab.kind !== "spec" || !tab.specPath) return;
+    try {
+      await window.electronAPI.specs.write(tab.specPath, tab.content);
+      setTabs((prev) => prev.map((t) => (t.id === tab.id ? { ...t, savedContent: t.content } : t)));
+      appendLog(`${tab.title} salvo.`, "success");
+    } catch (error) {
+      appendLog(`Erro ao salvar ${tab.title}: ${(error as Error).message}`, "error");
+    }
+  }
+
+  function saveActiveTab() {
+    if (activeTab?.kind === "spec") void saveSpecFile();
+    else void saveAndCompile();
   }
 
   function openApiTesterForActiveTab() {
@@ -962,7 +1042,7 @@ function App() {
     function handleKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        void saveAndCompile();
+        saveActiveTab();
       }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -1110,10 +1190,10 @@ function App() {
           onSelect: () => setQuickOpenOpen(true),
         },
         {
-          label: "Salvar e Compilar",
+          label: activeTab?.kind === "spec" ? "Salvar" : "Salvar e Compilar",
           shortcut: "Ctrl+S",
-          disabled: !activeTab?.connectionId,
-          onSelect: () => void saveAndCompile(),
+          disabled: activeTab?.kind === "spec" ? !activeTab.specPath : !activeTab?.connectionId,
+          onSelect: saveActiveTab,
         },
         {
           label: "Exportar Classe como XML…",
@@ -1166,10 +1246,6 @@ function App() {
             if (activeTab?.connectionId && activeTab?.namespace)
               openAgentTab(activeTab.connectionId, activeTab.namespace);
           },
-        },
-        {
-          label: "Abrir terminal (opencode)…",
-          onSelect: () => hasElectronAPI && void openAgentTerminal(),
         },
       ],
     },
@@ -1257,6 +1333,7 @@ function App() {
           <>
             <div className="sidebar-container" style={{ width: sidebarWidth }}>
               <ConnectionsPanel
+                ref={connectionsPanelRef}
                 onOpenDocument={handleOpenDocument}
                 onLog={appendLog}
                 onDocumentDeleted={handleDocumentDeleted}
@@ -1265,6 +1342,9 @@ function App() {
                   void openApiTesterForDocument(connectionId, namespace, docName)
                 }
                 onOpenAgent={openAgentTab}
+                onOpenSpec={openSpecTab}
+                onSpecDeleted={handleSpecDeleted}
+                onSpecRenamed={handleSpecRenamed}
               />
             </div>
             <div className="resize-handle resize-handle-x" onMouseDown={startSidebarResize} />
@@ -1290,6 +1370,7 @@ function App() {
                     {tab.kind === "sql" ? "🗄️ " : ""}
                     {tab.kind === "api" ? "🔌 " : ""}
                     {tab.kind === "agent" ? "🤖 " : ""}
+                    {tab.kind === "spec" ? "📝 " : ""}
                     {tab.readOnly ? "🔒 " : ""}
                     {tab.title}
                     {isDirty(tab) ? " ●" : ""}
@@ -1321,19 +1402,24 @@ function App() {
           <div className="editor-area">
             <div
               className="editor-surface"
-              style={{ display: activeTab?.kind === "code" ? "block" : "none" }}
+              style={{
+                display:
+                  activeTab?.kind === "code" || activeTab?.kind === "spec" ? "block" : "none",
+              }}
             >
               <CodeEditor
                 ref={codeEditorRef}
                 tabs={tabs
-                  .filter((tab) => tab.kind === "code")
+                  .filter((tab) => tab.kind === "code" || tab.kind === "spec")
                   .map((tab) => ({
                     id: tab.id,
                     title: tab.title,
                     content: tab.content,
                     readOnly: tab.readOnly,
                   }))}
-                activeTabId={activeTab?.kind === "code" ? activeTabId : null}
+                activeTabId={
+                  activeTab?.kind === "code" || activeTab?.kind === "spec" ? activeTabId : null
+                }
                 onContentChange={updateTabContent}
                 diagnostics={diagnostics}
                 theme={themeId}
@@ -1381,11 +1467,12 @@ function App() {
                     connectionId={tab.connectionId!}
                     namespace={tab.namespace!}
                     onLog={appendLog}
+                    onDocumentSaved={handleAgentDocumentSaved}
                   />
                 </div>
               ))}
           </div>
-          {outputOpen && (
+          {outputOpen ? (
             <>
               <div className="resize-handle resize-handle-y" onMouseDown={startOutputResize} />
               <div className="output-container" style={{ height: outputHeight }}>
@@ -1409,9 +1496,33 @@ function App() {
                     onOpenResult: (docName, line) => void openSearchResult(docName, line),
                     focusToken: searchFocusToken,
                   }}
+                  onHide={() => setOutputOpen(false)}
                 />
               </div>
             </>
+          ) : (
+            // Collapsed strip stays visible so reopening never requires the View menu or a
+            // shortcut — clicking either tab both restores the panel and selects that tab.
+            <div className="output-collapsed-bar">
+              <button
+                type="button"
+                onClick={() => {
+                  setOutputTab("log");
+                  setOutputOpen(true);
+                }}
+              >
+                Saída
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOutputTab("search");
+                  setOutputOpen(true);
+                }}
+              >
+                Pesquisar{searchResults.length > 0 ? ` (${searchResults.length})` : ""}
+              </button>
+            </div>
           )}
         </div>
       </div>

@@ -188,13 +188,21 @@ export async function getServerInfo(config: AtelierConnectionConfig): Promise<At
  * endpoint — `docnames` has no way to exclude system-provided classes/routines (its `filter` param
  * also doesn't reliably match names nested in packages), while this procedure's `systemFiles`
  * argument does the filtering server-side, matching what "regular" ObjectScript tooling shows.
+ *
+ * `spec` is `*.*` (every document type, not just classes/routines) — it used to be hardcoded to
+ * `*.cls,*.mac,*.int,*.inc`, so anything else saved to the namespace (a CSP file, or e.g. a plain
+ * `.md` written via the agent's iris_propose_write) landed on the server fine but could never be
+ * listed here, making it invisible in the Explorer and unopenable — this endpoint backs both that
+ * and the agent's own `iris_list_documents` tool (see agentBridge.ts's "/documents" route), so
+ * widening it here fixes visibility in both places at once. Noise (Ens/CSPX packages, .mac/.inc
+ * routines) is filtered back out client-side — see documentFilters.ts's isNoiseDocument.
  */
 export async function listDocuments(
   config: AtelierConnectionConfig,
   namespace: string,
   includeSystem = false,
 ): Promise<AtelierDocNameEntry[]> {
-  const spec = "*.cls,*.mac,*.int,*.inc";
+  const spec = "*.*";
   const systemFiles = includeSystem || namespace === "%SYS" ? "1" : "0";
   const response = await request<{ content: { Name: string; Type: string }[] }>(
     config,
