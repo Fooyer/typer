@@ -123,15 +123,24 @@ Não use ferramentas de arquivo local (read/write/edit/bash) para nada disso —
 projeto é só configuração, tanto o código quanto as specs são acessados exclusivamente pelas
 ferramentas MCP acima.
 
-## 3. Narre o progresso passo a passo
+## 3. Narre o progresso com uma checklist
 
 Para qualquer tarefa com mais de um passo óbvio (e principalmente para pedidos grandes/complexos),
-escreva uma frase curta ANTES de cada ação relevante dizendo o que você vai fazer e por quê — ex:
-"1. Vou ler Pacote.Classe.cls para entender a estrutura atual.", "2. Vou propor a alteração X.". Não
-espere até o fim para explicar tudo de uma vez. Isso é importante especialmente em tarefas longas: o
-usuário está vendo essas mensagens aparecerem em tempo real, e silêncio prolongado parece uma
-travada mesmo quando você só está processando um pedido grande — prefira narrar demais a narrar de
-menos.
+comece respondendo com uma checklist curta em markdown listando as subtarefas que você identificou,
+ex:
+
+\`\`\`
+- [ ] Ler Pacote.Classe.cls para entender a estrutura atual
+- [ ] Propor a alteração X
+- [ ] Propor a alteração Y
+\`\`\`
+
+Depois, ao concluir CADA item (não só no final), envie de novo a checklist inteira com aquele item
+marcado \`[x]\`, mais uma frase curta do que foi feito nele — não espere terminar tudo para reportar.
+Isso é essencial em tarefas longas: o usuário está vendo essas mensagens chegarem em tempo real, e
+silêncio prolongado parece uma travada mesmo quando você só está processando um pedido grande —
+prefira reportar demais a reportar de menos. Se surgir uma subtarefa nova no meio do caminho,
+adicione-a à checklist no próximo envio em vez de omiti-la.
 `;
   await fs.writeFile(path.join(dir, "AGENTS.md"), agentsInstructions);
 

@@ -142,6 +142,10 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
   // says "running" (opencode's process hasn't exited), but nothing suggests it's actually doing
   // anything anymore. See the stall-watch effect below.
   const [stalled, setStalled] = useState(false);
+  // Live snippet of whatever reasoning text is streaming in right now — reasoning is only ever used
+  // to drive the "Pensando…" loader below, never kept in `transcript`, since the full text is just
+  // noise once the run has moved on (see the loader-building code near the bottom of this file).
+  const [reasoningSnippet, setReasoningSnippet] = useState<string | null>(null);
   const runIdRef = useRef<string | null>(null);
   const currentBatchRef = useRef<{ id: string; prompt: string } | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -164,6 +168,11 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
       setStalled(false);
       const item = parseAgentLine(payload.line);
       if (!item) return;
+      if (item.kind === "reasoning") {
+        setReasoningSnippet(item.text.trim());
+        return;
+      }
+      setReasoningSnippet(null);
       if (item.kind === "error") sawErrorRef.current = true;
       setTranscript((prev) => [...prev, { item, stderr: !!payload.stderr }]);
     });
@@ -171,6 +180,7 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
       if (payload.runId !== runIdRef.current) return;
       setRunning(false);
       setStalled(false);
+      setReasoningSnippet(null);
       setPendingWrites([]);
       // A nonzero exit that never showed an explicit error line usually means the process died
       // quietly rather than opencode reporting why — for a big prompt, the single most likely cause
@@ -332,6 +342,7 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
     setError(null);
     setRunning(true);
     setStalled(false);
+    setReasoningSnippet(null);
     sawErrorRef.current = false;
     lastActivityRef.current = Date.now();
     try {
@@ -368,6 +379,7 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
     setReviews([]);
     setPendingWrites([]);
     setError(null);
+    setReasoningSnippet(null);
   }
 
   async function abort() {
@@ -459,14 +471,14 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
   const currentActivity =
     running && !activeReview
       ? (() => {
+          if (reasoningSnippet) {
+            const tail = reasoningSnippet.slice(-80);
+            return `💭 ${tail}${reasoningSnippet.length > 80 ? "…" : ""}`;
+          }
           const last = transcript[transcript.length - 1]?.item;
           if (!last) return "Pensando…";
           if (last.kind === "tool") return `${toolIcon(last.tool)} ${last.title ?? last.tool}`;
           if (last.kind === "text") return "💬 Escrevendo resposta…";
-          if (last.kind === "reasoning") {
-            const snippet = last.text.trim().slice(-80);
-            return `💭 ${snippet}${last.text.trim().length > 80 ? "…" : ""}`;
-          }
           return "Pensando…";
         })()
       : null;
@@ -663,17 +675,6 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
                   <div key={index} className="agent-msg agent-msg-text">
                     <AgentMarkdown text={item.text} />
                   </div>
-                );
-              }
-              if (item.kind === "reasoning") {
-                return (
-                  <details key={index} className="agent-msg agent-msg-reasoning">
-                    <summary>
-                      <span className="agent-tool-icon">💭</span>
-                      <span className="agent-tool-name">Raciocínio</span>
-                    </summary>
-                    <div className="agent-msg-reasoning-text">{item.text}</div>
-                  </details>
                 );
               }
               if (item.kind === "tool") {
