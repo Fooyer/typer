@@ -147,6 +147,12 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
   const transcriptRef = useRef<HTMLDivElement>(null);
   const reviewListRef = useRef<HTMLDivElement>(null);
   const lastActivityRef = useRef<number>(Date.now());
+  // Tracks whether the current run ever showed an explicit error line — read from `onDone` (not
+  // React state, since that handler is registered once with an empty dep array and would otherwise
+  // see a stale `transcript`) to tell a clean-but-silent process death (most likely the session
+  // hitting the model's token/context limit — see the message below) apart from a run that already
+  // explained itself.
+  const sawErrorRef = useRef(false);
 
   const hasElectronAPI = typeof window.electronAPI !== "undefined";
 
@@ -158,6 +164,7 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
       setStalled(false);
       const item = parseAgentLine(payload.line);
       if (!item) return;
+      if (item.kind === "error") sawErrorRef.current = true;
       setTranscript((prev) => [...prev, { item, stderr: !!payload.stderr }]);
     });
     const offDone = window.electronAPI.agent.onDone((payload) => {
@@ -165,6 +172,25 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
       setRunning(false);
       setStalled(false);
       setPendingWrites([]);
+      // A nonzero exit that never showed an explicit error line usually means the process died
+      // quietly rather than opencode reporting why — for a big prompt, the single most likely cause
+      // is the session running out of the model's token/context budget mid-generation. Surfacing a
+      // guess beats leaving the user staring at a transcript that just... stops.
+      if (payload.code !== 0 && !sawErrorRef.current) {
+        setTranscript((prev) => [
+          ...prev,
+          {
+            stderr: true,
+            item: {
+              kind: "error",
+              text:
+                `O agente encerrou inesperadamente (código ${payload.code}) sem explicar o motivo. ` +
+                `Isso costuma acontecer quando a sessão atinge o limite de tokens/contexto do modelo ` +
+                `— inicie um Novo Chat para continuar.`,
+            },
+          },
+        ]);
+      }
       onLog(
         payload.code === 0 ? "Agente terminou." : `Agente terminou com código ${payload.code}.`,
         payload.code === 0 ? "success" : "error",
@@ -306,6 +332,7 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
     setError(null);
     setRunning(true);
     setStalled(false);
+    sawErrorRef.current = false;
     lastActivityRef.current = Date.now();
     try {
       const specsDir = await window.electronAPI.specs.resolveDir(
@@ -436,6 +463,10 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
           if (!last) return "Pensando…";
           if (last.kind === "tool") return `${toolIcon(last.tool)} ${last.title ?? last.tool}`;
           if (last.kind === "text") return "💬 Escrevendo resposta…";
+          if (last.kind === "reasoning") {
+            const snippet = last.text.trim().slice(-80);
+            return `💭 ${snippet}${last.text.trim().length > 80 ? "…" : ""}`;
+          }
           return "Pensando…";
         })()
       : null;
@@ -632,6 +663,17 @@ function AgentPanel({ connectionId, namespace, onLog, onDocumentSaved }: AgentPa
                   <div key={index} className="agent-msg agent-msg-text">
                     <AgentMarkdown text={item.text} />
                   </div>
+                );
+              }
+              if (item.kind === "reasoning") {
+                return (
+                  <details key={index} className="agent-msg agent-msg-reasoning">
+                    <summary>
+                      <span className="agent-tool-icon">💭</span>
+                      <span className="agent-tool-name">Raciocínio</span>
+                    </summary>
+                    <div className="agent-msg-reasoning-text">{item.text}</div>
+                  </details>
                 );
               }
               if (item.kind === "tool") {

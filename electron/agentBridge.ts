@@ -212,6 +212,21 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       respondJson(res, 200, { content });
       return;
     }
+    if (req.method === "POST" && url.pathname.startsWith("/specs/")) {
+      const name = decodeURIComponent(url.pathname.slice("/specs/".length));
+      if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+        respondJson(res, 400, { error: "Nome de spec inválido." });
+        return;
+      }
+      // Unlike a code write (handleWrite below), this isn't gated on human approval — specs are
+      // local planning notes, not something that lands on the IRIS server or gets compiled, so
+      // there's nothing here that needs a review step the way a class/routine change does.
+      const { content } = JSON.parse(await readBody(req)) as { content: string };
+      const fileName = specs.resolveSpecFileName(name);
+      await specs.writeSpecFile(path.join(session.specsDir, fileName), content ?? "");
+      respondJson(res, 200, { name: fileName });
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/search") {
       const query = url.searchParams.get("q") ?? "";
       try {

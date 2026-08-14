@@ -204,6 +204,13 @@ function sanitizeFileName(name: string): string {
   return trimmed;
 }
 
+/** Sanitizes a bare file name and ensures it ends in `.md` — shared by create/rename and the
+ * agent's write tool (see agentBridge.ts's POST /specs/:name) so all three enforce the exact same
+ * "flat, .md-only" constraint on spec file names. */
+export function resolveSpecFileName(name: string): string {
+  return ensureMdExtension(sanitizeFileName(name));
+}
+
 export async function createSpecFile(dir: string, name: string): Promise<string> {
   const fileName = ensureMdExtension(sanitizeFileName(name));
   const filePath = path.join(dir, fileName);

@@ -20,9 +20,10 @@ if (!port || !token) {
 }
 const baseUrl = `http://127.0.0.1:${port}`;
 
-async function bridgeFetch(path: string): Promise<unknown> {
+async function bridgeFetch(path: string, init: RequestInit = {}): Promise<unknown> {
   const response = await fetch(`${baseUrl}${path}`, {
-    headers: { "X-Agent-Token": token! },
+    ...init,
+    headers: { ...init.headers, "X-Agent-Token": token! },
   });
   const text = await response.text();
   let data: unknown;
@@ -68,6 +69,33 @@ server.registerTool(
   async ({ name }) => {
     const doc = (await bridgeFetch(`/specs/${encodeURIComponent(name)}`)) as { content: string };
     return { content: [{ type: "text" as const, text: doc.content }] };
+  },
+);
+
+server.registerTool(
+  "write",
+  {
+    description:
+      "Cria ou sobrescreve um arquivo .md da aba 'Specs' com o CONTEÚDO COMPLETO informado (não um " +
+      "diff parcial — se o arquivo já existir, o conteúdo antigo é perdido). Cria o arquivo se ele " +
+      "ainda não existir. Ao contrário de uma escrita de código (iris_propose_write), isto NÃO " +
+      "espera aprovação humana — specs são notas locais de planejamento, não algo que é compilado " +
+      "ou vai para o servidor. Sempre que possível, leia o arquivo com 'read' primeiro para não " +
+      "apagar conteúdo relevante sem querer.",
+    inputSchema: z.object({
+      name: z.string().describe("Nome do arquivo .md, ex: plano.md (criado se não existir)"),
+      content: z.string().describe("Conteúdo completo do arquivo após a alteração"),
+    }),
+  },
+  async ({ name, content }) => {
+    const result = (await bridgeFetch(`/specs/${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    })) as { name: string };
+    return {
+      content: [{ type: "text" as const, text: `${result.name} salvo.` }],
+    };
   },
 );
 

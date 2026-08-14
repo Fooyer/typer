@@ -106,16 +106,32 @@ lugar (uma pasta local, fora deste projeto) e só são acessíveis por:
 
 - \`specs_list\` — lista os nomes dos arquivos .md de spec disponíveis.
 - \`specs_read\` — lê o conteúdo de um deles pelo nome (ex: "plano.md").
+- \`specs_write\` — cria ou sobrescreve um arquivo .md de spec com o conteúdo completo informado
+  (não um diff parcial). Cria o arquivo se ainda não existir. Diferente de \`iris_propose_write\`,
+  isto NÃO espera aprovação humana — grava direto. Leia o arquivo com \`specs_read\` primeiro sempre
+  que for uma edição (não uma criação do zero), para não apagar conteúdo por engano.
 
-Sempre que o usuário mencionar "specs", "especificação", "plano" ou pedir para seguir um documento de
-planejamento do projeto, use \`specs_list\`/\`specs_read\` — nunca as ferramentas \`iris_*\`. Antes de
-atuar em uma tarefa, também vale a pena checar \`specs_list\` e ler (\`specs_read\`) as specs cujo nome
-pareça relevante para o que foi pedido — não leia todas indiscriminadamente, só as que puderem conter
-contexto útil. Se nenhuma parecer relevante, siga sem ler nenhuma.
+Sempre que o usuário mencionar "specs", "especificação", "plano" ou pedir para seguir/atualizar um
+documento de planejamento do projeto, use \`specs_list\`/\`specs_read\`/\`specs_write\` — nunca as
+ferramentas \`iris_*\`. Antes de atuar em uma tarefa, também vale a pena checar \`specs_list\` e ler
+(\`specs_read\`) as specs cujo nome pareça relevante para o que foi pedido — não leia todas
+indiscriminadamente, só as que puderem conter contexto útil. Se nenhuma parecer relevante, siga sem
+ler nenhuma. Se o usuário pedir para registrar uma decisão, atualizar o plano ou documentar algo do
+que foi feito, use \`specs_write\` para isso em vez de só responder no chat.
 
 Não use ferramentas de arquivo local (read/write/edit/bash) para nada disso — este diretório de
 projeto é só configuração, tanto o código quanto as specs são acessados exclusivamente pelas
 ferramentas MCP acima.
+
+## 3. Narre o progresso passo a passo
+
+Para qualquer tarefa com mais de um passo óbvio (e principalmente para pedidos grandes/complexos),
+escreva uma frase curta ANTES de cada ação relevante dizendo o que você vai fazer e por quê — ex:
+"1. Vou ler Pacote.Classe.cls para entender a estrutura atual.", "2. Vou propor a alteração X.". Não
+espere até o fim para explicar tudo de uma vez. Isso é importante especialmente em tarefas longas: o
+usuário está vendo essas mensagens aparecerem em tempo real, e silêncio prolongado parece uma
+travada mesmo quando você só está processando um pedido grande — prefira narrar demais a narrar de
+menos.
 `;
   await fs.writeFile(path.join(dir, "AGENTS.md"), agentsInstructions);
 
@@ -162,6 +178,11 @@ export async function runAgent(
     dir,
     "--format",
     "json",
+    // Streams the model's reasoning as it's produced, not just the final reply — without it, a big
+    // prompt can leave the UI showing nothing at all for a long stretch while the model is still
+    // silently working, which looks exactly like a hang. This gives the transcript (and the "what's
+    // it doing" loader) real incremental content to show instead.
+    "--thinking",
     ...(model ? ["--model", model] : []),
     // Without this, every run starts a brand-new opencode session even for the same project dir —
     // the whole conversation resets after a single exchange. Passing back the session id opencode

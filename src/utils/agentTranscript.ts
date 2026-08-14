@@ -9,6 +9,10 @@
  */
 export type TranscriptItem =
   | { kind: "text"; text: string }
+  // Model's reasoning/thinking content, streamed when opencode is run with `--thinking` (see
+  // agentRun.ts) — mainly useful for long/complex prompts, where otherwise nothing at all shows up
+  // on screen while the model is still "silently" working, which is easy to mistake for a hang.
+  | { kind: "reasoning"; text: string }
   | {
       kind: "tool";
       tool: string;
@@ -61,6 +65,26 @@ interface AgentRawEvent {
 
 const ERROR_STATUSES = new Set(["error", "failed", "failure"]);
 
+// Provider error text for "out of context/tokens" varies a lot (OpenAI-style
+// "context_length_exceeded", Anthropic-style "prompt is too long", generic "rate limit"/"quota"
+// wording, etc.) and isn't documented for whatever backend opencode is proxying to here — matching
+// on keywords instead of one exact shape so the friendlier message below still kicks in even if the
+// exact wording differs from whatever this was tested against.
+const TOKEN_LIMIT_PATTERN =
+  /context.{0,20}(length|window)|too (many|long)|token.{0,10}(limit|exceed)|max(imum)?.{0,10}tokens?|context.{0,10}exceed|rate.?limit|quota|insufficient.?(quota|credit)/i;
+
+/** Prefixes a clearer, translated explanation onto error text that looks like a token/context/quota
+ * problem — this is by far the most likely cause of a run silently dying partway through a very
+ * large prompt, and "the model returned some cryptic provider error" isn't an actionable message on
+ * its own. Leaves the original text untouched (and appended) so nothing is lost for debugging. */
+function annotateIfTokenLimit(text: string): string {
+  if (!TOKEN_LIMIT_PATTERN.test(text)) return text;
+  return (
+    `Esta sessão parece ter atingido o limite de tokens/contexto do modelo — inicie um Novo Chat ` +
+    `para continuar. (${text})`
+  );
+}
+
 /** Digs through a handful of common shapes (`"a string"`, `{message: "..."}`, `{error: "..."}`,
  * `{error: {message: "..."}}`) looking for human-readable error text — opencode's exact envelope
  * for a failure isn't documented, so this takes whatever plausible field is there instead of
@@ -94,7 +118,10 @@ export function parseAgentLine(line: string): TranscriptItem | null {
     // No `part` at all but the envelope itself says "error" — still worth surfacing rather than
     // falling back to an easy-to-miss raw line.
     if (event.type === "error") {
-      return { kind: "error", text: extractMessage(event) ?? "O agente reportou um erro." };
+      return {
+        kind: "error",
+        text: annotateIfTokenLimit(extractMessage(event) ?? "O agente reportou um erro."),
+      };
     }
     return { kind: "raw", text: line };
   }
@@ -103,15 +130,21 @@ export function parseAgentLine(line: string): TranscriptItem | null {
     return { kind: "text", text: part.text };
   }
 
+  if (part.type === "reasoning" && typeof part.text === "string" && part.text.trim()) {
+    return { kind: "reasoning", text: part.text };
+  }
+
   if (part.type === "tool") {
     const diff = part.state?.metadata?.filediff?.patch ?? part.state?.metadata?.diff;
     const status = part.state?.status;
     const errorText =
       status && ERROR_STATUSES.has(status.toLowerCase())
-        ? (extractMessage(part.state?.metadata?.error) ??
-          extractMessage(part.state?.error) ??
-          extractMessage(part.state?.output) ??
-          "A ferramenta falhou.")
+        ? annotateIfTokenLimit(
+            extractMessage(part.state?.metadata?.error) ??
+              extractMessage(part.state?.error) ??
+              extractMessage(part.state?.output) ??
+              "A ferramenta falhou.",
+          )
         : undefined;
     return {
       kind: "tool",
@@ -125,7 +158,10 @@ export function parseAgentLine(line: string): TranscriptItem | null {
   }
 
   if (part.type === "error") {
-    return { kind: "error", text: extractMessage(part) ?? "O agente reportou um erro." };
+    return {
+      kind: "error",
+      text: annotateIfTokenLimit(extractMessage(part) ?? "O agente reportou um erro."),
+    };
   }
 
   if (part.type === "step-start") return null;
@@ -133,7 +169,7 @@ export function parseAgentLine(line: string): TranscriptItem | null {
     if (part.reason && ERROR_STATUSES.has(part.reason.toLowerCase())) {
       return {
         kind: "error",
-        text: extractMessage(part) ?? "A etapa do agente terminou com erro.",
+        text: annotateIfTokenLimit(extractMessage(part) ?? "A etapa do agente terminou com erro."),
       };
     }
     return null;

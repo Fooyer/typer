@@ -1131,6 +1131,43 @@ body {
   font-size: 12px;
 }
 
+/* Model reasoning/thinking content (see agentTranscript.ts's "reasoning" kind, streamed via
+   opencode's --thinking flag) — same collapsible shape as .agent-msg-tool, but visually quieter
+   (dashed border, italic body) since it's supplementary "what the model is mulling over", not an
+   action that happened. Collapsed by default, unlike a failed tool call: there's nothing actionable
+   in it, so it doesn't need to grab attention the way a failure does. */
+.agent-msg-reasoning {
+  border: 1px dashed var(--border);
+  background: transparent;
+}
+
+.agent-msg-reasoning summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-sidebar);
+  opacity: 0.75;
+  list-style: none;
+}
+
+.agent-msg-reasoning summary::-webkit-details-marker {
+  display: none;
+}
+
+.agent-msg-reasoning-text {
+  margin: 0;
+  padding: 8px 10px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  font-style: italic;
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.7;
+}
+
 .agent-msg-raw {
   padding: 4px 10px;
   font-family: var(--mono);
