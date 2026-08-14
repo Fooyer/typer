@@ -70,6 +70,48 @@ export function clearSession(config: AtelierConnectionConfig): void {
   cookieJar.delete(cookieKey(config));
 }
 
+/**
+ * Caps how many requests can be in flight at once per connection (same key as the cookie jar
+ * above) — without this, several requests fired at nearly the same time (the agent's MCP tool
+ * calls, a bulk export, the search-fallback downloader, two agent tabs on the same server) all read
+ * the cookie jar before any of them gets a response, so they race out with only Basic Auth instead
+ * of the shared session cookie, and IRIS ends up spinning up one session per request in that burst
+ * instead of reusing one. Serializing (mostly) closes that race and directly limits how many
+ * concurrent IRIS-side sessions/processes this app can ever hold open — the actual fix for repeated
+ * 503s on license-constrained servers, the cookie jar alone only helps once traffic is sequential.
+ */
+const MAX_CONCURRENT_REQUESTS_PER_CONNECTION = 2;
+
+interface ConnectionQueue {
+  active: number;
+  waiting: Array<() => void>;
+}
+
+const requestQueues = new Map<string, ConnectionQueue>();
+
+function acquireRequestSlot(key: string): Promise<() => void> {
+  let queue = requestQueues.get(key);
+  if (!queue) {
+    queue = { active: 0, waiting: [] };
+    requestQueues.set(key, queue);
+  }
+  const release = () => {
+    queue!.active--;
+    const next = queue!.waiting.shift();
+    if (next) {
+      queue!.active++;
+      next();
+    }
+  };
+  if (queue.active < MAX_CONCURRENT_REQUESTS_PER_CONNECTION) {
+    queue.active++;
+    return Promise.resolve(release);
+  }
+  return new Promise<() => void>((resolve) => {
+    queue!.waiting.push(() => resolve(release));
+  });
+}
+
 function buildUrl(
   config: AtelierConnectionConfig,
   path: string,
@@ -97,6 +139,8 @@ function buildUrl(
 // flow in particular would just sit at "Sincronizando…" indefinitely with no error to react to.
 const REQUEST_TIMEOUT_MS = 30_000;
 
+// Thin wrapper so every caller goes through the concurrency gate above — the actual HTTP work is
+// in performRequest below, unchanged except that `key` is now passed in instead of recomputed.
 async function request<T>(
   config: AtelierConnectionConfig,
   method: string,
@@ -107,8 +151,27 @@ async function request<T>(
     timeoutMs?: number;
   } = {},
 ): Promise<AtelierResponse<T>> {
-  const auth = Buffer.from(`${config.username}:${config.password}`).toString("base64");
   const key = cookieKey(config);
+  const release = await acquireRequestSlot(key);
+  try {
+    return await performRequest<T>(config, method, path, options, key);
+  } finally {
+    release();
+  }
+}
+
+async function performRequest<T>(
+  config: AtelierConnectionConfig,
+  method: string,
+  path: string,
+  options: {
+    body?: unknown;
+    params?: Record<string, string | number | boolean | undefined>;
+    timeoutMs?: number;
+  },
+  key: string,
+): Promise<AtelierResponse<T>> {
+  const auth = Buffer.from(`${config.username}:${config.password}`).toString("base64");
   const cookies = cookieJar.get(key) ?? [];
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   let response: Response;

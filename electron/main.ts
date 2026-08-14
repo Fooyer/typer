@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isWindowForceClose, registerIpcHandlers } from "./ipc";
+import { abortAllAgentRuns } from "./agentRun";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,6 +59,13 @@ app.on("window-all-closed", () => {
     app.quit();
     win = null;
   }
+});
+
+// Without this, quitting mid-run skips the child opencode process's own cleanup path entirely (see
+// abortAllAgentRuns's doc comment) — this fires before Electron tears anything down, so the kill
+// actually has a chance to take effect first.
+app.on("before-quit", () => {
+  abortAllAgentRuns();
 });
 
 app.on("activate", () => {

@@ -154,6 +154,18 @@ export async function runAgent(
   model?: string,
   sessionId?: string,
 ): Promise<string> {
+  // Each running agent is its own independent burst of IRIS calls (list/read/search/write, several
+  // per turn) — one AgentPanel tab per namespace means nothing previously stopped starting a second
+  // conversation (same or different namespace, same or different server) while one was still going,
+  // compounding exactly the session/connection pressure that causes 503s on a license-constrained
+  // server. Capping this to one at a time app-wide is a deliberate tradeoff (a second tab has to
+  // wait), not an oversight.
+  if (activeRuns.size > 0) {
+    throw new Error(
+      "Só um agente pode rodar por vez neste app (para economizar sessões/licença do IRIS). " +
+        "Aguarde a execução atual terminar, ou clique em Parar nela, antes de iniciar uma nova.",
+    );
+  }
   const runId = crypto.randomUUID();
   const { port: bridgePort, token: bridgeToken } = await agentBridge.registerSession(
     connectionId,
@@ -262,4 +274,13 @@ export function abortAgentRun(runId: string): void {
   } else {
     entry.child.kill("SIGTERM");
   }
+}
+
+// Called on app shutdown (see main.ts's "before-quit" handler) — without this, quitting with a run
+// active skips the child's own "close"/"error" handlers entirely (the whole process tree is torn
+// down first), so activeRuns/agentBridge sessions never get cleaned up and the opencode child can
+// outlive the app as an orphaned process still capable of hitting IRIS through nothing (the bridge
+// dies with the app) but still worth not leaving behind.
+export function abortAllAgentRuns(): void {
+  for (const runId of activeRuns.keys()) abortAgentRun(runId);
 }
