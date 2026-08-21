@@ -13,6 +13,7 @@ import type {
 import type { AgentDone, AgentEvent, AgentPendingWrite, AgentSession } from "../electron/preload";
 import type { WriteResolution } from "../electron/agentBridge";
 import type { SpecFileEntry } from "../electron/specs";
+import type { UpdaterStatus } from "../electron/updater";
 
 export interface ElectronAPI {
   getVersions: () => { chrome: string; node: string; electron: string };
@@ -23,6 +24,11 @@ export interface ElectronAPI {
     close: () => Promise<void>;
     onCloseRequested: (callback: () => void) => void;
     confirmClose: () => Promise<void>;
+  };
+  updater: {
+    check: () => Promise<void>;
+    install: () => Promise<void>;
+    onStatus: (callback: (status: UpdaterStatus) => void) => () => void;
   };
   connections: {
     list: () => Promise<ConnectionProfile[]>;

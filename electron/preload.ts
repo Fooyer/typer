@@ -13,6 +13,7 @@ import type {
   StudioUserAction,
 } from "./atelier";
 import type { SpecFileEntry } from "./specs";
+import type { UpdaterStatus } from "./updater";
 
 export interface AgentEvent {
   runId: string;
@@ -54,6 +55,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.on("window:close-requested", () => callback());
     },
     confirmClose: (): Promise<void> => ipcRenderer.invoke("window:confirmClose"),
+  },
+  updater: {
+    check: (): Promise<void> => ipcRenderer.invoke("updater:check"),
+    install: (): Promise<void> => ipcRenderer.invoke("updater:install"),
+    onStatus: (callback: (status: UpdaterStatus) => void): (() => void) => {
+      const handler = (_event: unknown, status: UpdaterStatus) => callback(status);
+      ipcRenderer.on("updater:status", handler);
+      return () => ipcRenderer.removeListener("updater:status", handler);
+    },
   },
   connections: {
     list: (): Promise<ConnectionProfile[]> => ipcRenderer.invoke("connections:list"),

@@ -1,6 +1,6 @@
 {
   "name": "typer",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
@@ -9,12 +9,14 @@
     "build": "tsc && tsc -p tsconfig.electron.json && vp build",
     "preview": "vp preview",
     "prepare": "vp config",
-    "dist": "pnpm build && electron-builder"
+    "dist": "pnpm build && electron-builder",
+    "release": "pnpm build && electron-builder --publish always"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
     "diff": "^9.0.0",
     "dompurify": "^3.4.8",
+    "electron-updater": "^6.8.9",
     "marked": "^14.0.0",
     "monaco-editor": "^0.56.0",
     "opencode-ai": "^1.18.16",
@@ -61,6 +63,11 @@
     },
     "linux": {
       "icon": "public/favicon.svg"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Fooyer",
+      "repo": "typer"
     }
   }
 }

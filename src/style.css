@@ -252,6 +252,30 @@ body {
   left: 100%;
 }
 
+.update-pill {
+  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+  font-size: 12px;
+  white-space: nowrap;
+  padding: 3px 10px;
+  margin-right: 4px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+button.update-pill-ready {
+  cursor: pointer;
+  font: inherit;
+  color: #fff;
+  background: var(--accent);
+}
+
+button.update-pill-ready:hover {
+  background: color-mix(in srgb, var(--accent) 85%, #fff);
+}
+
 .window-controls {
   -webkit-app-region: no-drag;
   display: flex;

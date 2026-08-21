@@ -31,6 +31,7 @@ import { getKnownClasses } from "./monaco/classIndex";
 import { setClassMemberProvider, type ClassMember } from "./monaco/classMembers";
 import { setTypeParameterProvider } from "./monaco/typeParameters";
 import type { StudioMenu, StudioUserAction } from "../electron/atelier";
+import type { UpdaterStatus } from "../electron/updater";
 
 // Read once at module load (before App() ever mounts) so a persisted custom theme is registered
 // into themes/registry.ts's in-memory theme list before the component's first render asks for it.
@@ -104,6 +105,7 @@ function App() {
   const [activeTabId, setActiveTabId] = useState<string | null>("tab-0");
   const [pendingCloseId, setPendingCloseId] = useState<string | null>(null);
   const [pendingWindowClose, setPendingWindowClose] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<UpdaterStatus | null>(null);
   const [diagnostics, setDiagnostics] = useState<Record<string, Diagnostic[]>>({});
   const [panelOpen, setPanelOpen] = useState(true);
   const [outputOpen, setOutputOpen] = useState(true);
@@ -193,6 +195,23 @@ function App() {
       if (hasUnsaved) setPendingWindowClose(true);
       else void window.electronAPI.windowControls.confirmClose();
     });
+  }, []);
+
+  // main.ts's updater.ts checks for updates on startup and every few hours, downloading silently in
+  // the background — this just reflects that progress in the titlebar and surfaces the result, so the
+  // user only ever has to act once a new version is actually ready (see the update pill below).
+  useEffect(() => {
+    if (!hasElectronAPI) return;
+    return window.electronAPI.updater.onStatus((status) => {
+      setUpdateStatus(status);
+      if (status.state === "available")
+        appendLog(`Nova versão ${status.version} encontrada, baixando…`, "info");
+      if (status.state === "downloaded")
+        appendLog(`Atualização ${status.version} pronta — reinicie para aplicar.`, "success");
+      if (status.state === "error")
+        appendLog(`Erro ao verificar atualizações: ${status.message}`, "error");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function importThemeFile(file: File) {
@@ -1287,6 +1306,21 @@ function App() {
             event.target.value = "";
           }}
         />
+        {updateStatus?.state === "downloading" && (
+          <div className="update-pill" title={`Baixando atualização… ${updateStatus.percent}%`}>
+            Baixando atualização… {updateStatus.percent}%
+          </div>
+        )}
+        {updateStatus?.state === "downloaded" && (
+          <button
+            type="button"
+            className="update-pill update-pill-ready"
+            title={`Versão ${updateStatus.version} pronta para instalar`}
+            onClick={() => void window.electronAPI.updater.install()}
+          >
+            Reiniciar e Atualizar
+          </button>
+        )}
         <div className="window-controls">
           <button
             type="button"

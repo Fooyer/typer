@@ -6,6 +6,7 @@ import { openStudioCspWindow } from "./studioCspWindow";
 import { abortAgentRun, runAgent } from "./agentRun";
 import { resolvePendingWrite } from "./agentBridge";
 import * as specs from "./specs";
+import { checkForUpdatesNow, installUpdateNow } from "./updater";
 import type { ConnectionProfile } from "./connections";
 import type { AtelierConnectionConfig } from "./atelier";
 
@@ -333,6 +334,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("specs:rename", (_event, filePath: string, newName: string) =>
     specs.renameSpecFile(filePath, newName),
   );
+  ipcMain.handle("updater:check", () => checkForUpdatesNow());
+  ipcMain.handle("updater:install", () => installUpdateNow());
+
   ipcMain.handle("specs:chooseDirectory", async (event, currentDir?: string) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const options = {

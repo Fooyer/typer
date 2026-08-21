@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isWindowForceClose, registerIpcHandlers } from "./ipc";
 import { abortAllAgentRuns } from "./agentRun";
+import { startAutoUpdater } from "./updater";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -78,4 +79,5 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   registerIpcHandlers();
   createWindow();
+  startAutoUpdater(() => win);
 });
